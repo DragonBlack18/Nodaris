@@ -14,6 +14,13 @@ from api.integrations.native_ping_client import (
     NativePingClient,
     NativePingError,
 )
+from api.logging_config import get_logger
+
+
+logger = get_logger(
+    "engine",
+    "monitorping-engine.log",
+)
 
 
 class MonitorService:
@@ -156,8 +163,60 @@ class MonitorService:
         ]
 
         results = await asyncio.gather(
-            *tasks
+            *tasks,
+            return_exceptions=True,
         )
+
+        isolated_results = []
+
+        for device, result in zip(
+            devices,
+            results,
+        ):
+
+            if isinstance(
+                result,
+                asyncio.CancelledError,
+            ):
+                raise result
+
+            if isinstance(
+                result,
+                Exception,
+            ):
+
+                ip = str(
+                    device.get(
+                        "ip",
+                        "",
+                    )
+                )
+
+                logger.error(
+                    "Falha inesperada no probe de %s: %s",
+                    ip or "<IP ausente>",
+                    result,
+                    exc_info=(
+                        type(result),
+                        result,
+                        result.__traceback__,
+                    ),
+                )
+
+                isolated_results.append(
+                    self._unexpected_error_result(
+                        device,
+                        result,
+                    )
+                )
+
+                continue
+
+            isolated_results.append(
+                result
+            )
+
+        results = isolated_results
 
         elapsed = (
             time.perf_counter()
@@ -194,4 +253,51 @@ class MonitorService:
                 ),
             },
             "devices": results,
+        }
+
+    def _unexpected_error_result(
+        self,
+        device: dict,
+        error: Exception,
+    ) -> dict:
+
+        native_provider = (
+            self.provider_name
+            == "native"
+        )
+
+        return {
+            "ip": str(
+                device.get(
+                    "ip",
+                    "",
+                )
+            ),
+            "name": str(
+                device.get(
+                    "name",
+                    "",
+                )
+            ),
+            "gateway": device.get(
+                "gateway",
+                "",
+            ),
+            "online": False,
+            "status": "ERROR",
+            "latency_ms": None,
+            "latency_source": (
+                "windows_ping"
+                if native_provider
+                else "blackbox"
+            ),
+            "probe_engine": (
+                "native_ping"
+                if native_provider
+                else "blackbox"
+            ),
+            "error": (
+                "Falha inesperada no probe: "
+                f"{error}"
+            ),
         }
