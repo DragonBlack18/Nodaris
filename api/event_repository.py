@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from api.config import DATABASE_FILE
@@ -31,7 +32,7 @@ class EventRepository:
 
     def _initialize(self):
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             connection.execute(
                 """
@@ -88,7 +89,7 @@ class EventRepository:
         event: dict,
     ) -> int:
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             cursor = connection.execute(
                 """
@@ -128,7 +129,7 @@ class EventRepository:
             min(limit, 1000),
         )
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             connection.row_factory = sqlite3.Row
 
@@ -162,7 +163,7 @@ class EventRepository:
 
     def count_events(self) -> int:
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             result = connection.execute(
                 """

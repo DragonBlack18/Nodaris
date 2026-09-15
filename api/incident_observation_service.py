@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 
 from datetime import datetime
 from pathlib import Path
@@ -212,7 +213,7 @@ class IncidentObservationService:
         start_text = started_at.isoformat(timespec="seconds")
         end_text = ended_at.isoformat(timespec="seconds")
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             rows = connection.execute(
                 """
                 SELECT

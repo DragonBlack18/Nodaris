@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
@@ -33,7 +34,7 @@ class IncidentRepository:
 
     def _initialize(self):
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             connection.execute(
                 """
@@ -97,7 +98,7 @@ class IncidentRepository:
         started_at: str,
     ) -> int | None:
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             existing = connection.execute(
                 """
@@ -144,7 +145,7 @@ class IncidentRepository:
         ended_at: str,
     ) -> dict | None:
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             connection.row_factory = sqlite3.Row
 
@@ -220,7 +221,7 @@ class IncidentRepository:
         ip: str,
     ) -> bool:
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             result = connection.execute(
                 """
@@ -245,7 +246,7 @@ class IncidentRepository:
         end_at: str,
     ) -> list[dict]:
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             connection.row_factory = sqlite3.Row
 
@@ -345,7 +346,7 @@ class IncidentRepository:
 
         params.append(limit)
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             connection.row_factory = sqlite3.Row
 
@@ -371,7 +372,7 @@ class IncidentRepository:
 
     def get_summary(self) -> dict:
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             row = connection.execute(
                 """

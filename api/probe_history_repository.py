@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -35,7 +36,7 @@ class ProbeHistoryRepository:
 
     def _initialize(self):
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             connection.execute(
                 """
@@ -99,7 +100,7 @@ class ProbeHistoryRepository:
         observed_at: str,
     ):
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             connection.execute(
                 """
@@ -147,7 +148,7 @@ class ProbeHistoryRepository:
             min(limit, 5000),
         )
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             rows = connection.execute(
                 """
@@ -246,7 +247,7 @@ class ProbeHistoryRepository:
             timespec="seconds"
         )
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             rows = connection.execute(
                 """
@@ -474,7 +475,7 @@ class ProbeHistoryRepository:
             timespec="seconds"
         )
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             cursor = connection.execute(
                 """

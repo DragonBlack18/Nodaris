@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 
 from datetime import (
     datetime,
@@ -542,7 +543,7 @@ class ProbeAvailabilityService:
             )
         )
 
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
 
             rows = conn.execute(
                 """
@@ -591,7 +592,7 @@ class ProbeAvailabilityService:
             )
         )
 
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
 
             row = conn.execute(
                 """

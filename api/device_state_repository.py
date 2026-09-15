@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from api.config import DATABASE_FILE
@@ -26,7 +27,7 @@ class DeviceStateRepository:
 
     def _initialize(self):
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             connection.execute(
                 """
@@ -54,7 +55,7 @@ class DeviceStateRepository:
         timestamp: str,
     ):
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             connection.execute(
                 """
@@ -92,7 +93,7 @@ class DeviceStateRepository:
 
     def get_devices(self):
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
 
             rows = connection.execute(
                 """
