@@ -101,6 +101,13 @@ Gere os três executáveis:
 
 Compile `NODARIS.iss` com Inno Setup 6 para gerar o instalador.
 
+## Desenvolvedores
+
+O desenvolvimento do NODARIS contou com a participação das seguintes áreas:
+
+- **DragonBlack18** — Desenvolvimento de Software, responsável pelo desenvolvimento e evolução do sistema de monitoramento.
+- **JEFERSON BRANGER** — Infraestrutura, responsável pelo suporte e colaboração na área de infraestrutura do projeto.
+
 ## Compatibilidade
 
 Alguns identificadores internos continuam com o nome histórico `monitorping` para preservar contratos, logs, banco e clientes existentes. Eles não são marca visível e não devem ser renomeados sem migração específica. Consulte [docs/REBRANDING.md](docs/REBRANDING.md) e [docs/DATA_RETENTION.md](docs/DATA_RETENTION.md).
