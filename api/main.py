@@ -109,9 +109,10 @@ async def lifespan(app: FastAPI):
 
     await monitor_engine.start()
 
-    yield
-
-    await monitor_engine.stop()
+    try:
+        yield
+    finally:
+        await monitor_engine.stop()
 
 
 # =========================================================
