@@ -37,7 +37,7 @@ class DeviceManagementWindow(QMainWindow):
 
         self.setWindowTitle("NODARIS — Equipamentos")
         self.resize(900, 620)
-        self.setMinimumSize(720, 480)
+        self.setMinimumSize(820, 480)
 
         self._build_ui()
         self._apply_style()
@@ -114,7 +114,9 @@ class DeviceManagementWindow(QMainWindow):
             3,
             QHeaderView.ResizeMode.Fixed,
         )
-        self.table.setColumnWidth(3, 190)
+        # 250 px preservam o padding do tema nos dois botoes de acao,
+        # inclusive com escalonamento DPI do Windows.
+        self.table.setColumnWidth(3, 250)
         root.addWidget(self.table, 1)
 
         self.status_label = QLabel("")
