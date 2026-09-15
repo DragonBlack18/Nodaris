@@ -1,6 +1,12 @@
+<div align="center">
+
+<img src="assets/branding/nodaris_icon.png" width="180" alt="NODARIS Logo">
+
 # NODARIS
 
-O NODARIS monitora equipamentos de rede por ICMP no Windows e mantém uma visão operacional compartilhada entre o Admin e a TV.
+**Monitoramento de rede simples, resiliente e centralizado.**
+
+</div>
 
 ## Arquitetura
 
