@@ -10,6 +10,7 @@ from api.config import (
     LATENCY_POOR_MAX,
     LATENCY_WARNING_MAX,
 )
+from api.latency import normalize_probe_latency_ms
 
 
 class IPHealthService:
@@ -44,6 +45,13 @@ class IPHealthService:
             "ERROR",
         )
 
+        current_latency = (
+            normalize_probe_latency_ms(
+                probe_status,
+                result.get("latency_ms"),
+            )
+        )
+
         state = self._get_or_create_state(
             ip
         )
@@ -56,9 +64,7 @@ class IPHealthService:
 
             self._process_online(
                 state=state,
-                latency_ms=result.get(
-                    "latency_ms"
-                ),
+                latency_ms=current_latency,
             )
 
         # =================================================
@@ -84,9 +90,7 @@ class IPHealthService:
         return self._build_result(
             ip=ip,
             state=state,
-            current_latency=result.get(
-                "latency_ms"
-            ),
+            current_latency=current_latency,
         )
 
     # =====================================================

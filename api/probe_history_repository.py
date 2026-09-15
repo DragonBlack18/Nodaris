@@ -7,6 +7,7 @@ from api.config import (
     DATABASE_FILE,
     PROBE_HISTORY_RETENTION_DAYS,
 )
+from api.latency import normalize_probe_latency_ms
 
 
 class ProbeHistoryRepository:
@@ -99,6 +100,11 @@ class ProbeHistoryRepository:
         consecutive_successes: int,
         observed_at: str,
     ):
+
+        latency_ms = normalize_probe_latency_ms(
+            probe_status,
+            latency_ms,
+        )
 
         with closing(self._connect()) as connection:
 

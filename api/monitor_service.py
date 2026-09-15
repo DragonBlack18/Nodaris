@@ -15,6 +15,7 @@ from api.integrations.native_ping_client import (
     NativePingError,
 )
 from api.logging_config import get_logger
+from api.latency import normalize_probe_latency_ms
 
 
 logger = get_logger(
@@ -135,6 +136,15 @@ class MonitorService:
 
             result = await self._probe(
                 ip
+            )
+
+            result = dict(result)
+
+            result["latency_ms"] = (
+                normalize_probe_latency_ms(
+                    result.get("status"),
+                    result.get("latency_ms"),
+                )
             )
 
             return {
