@@ -11,8 +11,12 @@ class APILifespanTests(unittest.IsolatedAsyncioTestCase):
         engine.start = AsyncMock()
         engine.stop = AsyncMock()
 
-        with patch("api.main.monitor_engine", engine):
+        with (
+            patch("api.main.monitor_engine", engine),
+            patch("api.main.run_startup_migrations") as migrations,
+        ):
             async with lifespan(None):
+                migrations.assert_called_once_with()
                 engine.start.assert_awaited_once_with()
 
         engine.stop.assert_awaited_once_with()
@@ -23,7 +27,10 @@ class APILifespanTests(unittest.IsolatedAsyncioTestCase):
         engine.stop = AsyncMock()
 
         with self.assertRaisesRegex(RuntimeError, "controlled shutdown"):
-            with patch("api.main.monitor_engine", engine):
+            with (
+                patch("api.main.monitor_engine", engine),
+                patch("api.main.run_startup_migrations"),
+            ):
                 async with lifespan(None):
                     raise RuntimeError("controlled shutdown")
 

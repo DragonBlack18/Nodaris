@@ -168,6 +168,7 @@ def ensure_persistent_layout(
             temporary_file.write_text(
                 json.dumps(
                     {
+                        "config_version": 1,
                         "intervalo": 5,
                         "equipamentos": {},
                     },

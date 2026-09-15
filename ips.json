@@ -1,4 +1,5 @@
 {
+  "config_version": 1,
   "intervalo": 5,
   "som_ativo": false,
   "arquivo_audio": "",

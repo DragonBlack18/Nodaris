@@ -46,6 +46,9 @@ from api.probe_availability_service import (
 from api.incident_observation_service import (
     IncidentObservationService,
 )
+from api.migrations import (
+    run_startup_migrations,
+)
 
 
 # =========================================================
@@ -107,6 +110,8 @@ monitor_engine = MonitorEngine(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
+    run_startup_migrations()
 
     await monitor_engine.start()
 
