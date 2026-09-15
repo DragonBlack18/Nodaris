@@ -1,0 +1,36 @@
+{
+  "config_version": 1,
+  "intervalo": 5,
+  "som_ativo": false,
+  "arquivo_audio": "",
+  "equipamentos": {
+    "192.168.6.251": {
+      "nome": "APE do MEZ",
+      "gateway": "192.168.6.1",
+      "queda": "",
+      "retorno": "",
+      "manutencao": false
+    },
+    "192.168.24.209": {
+      "nome": "Meu PC - Ethernet",
+      "gateway": "192.168.24.1",
+      "queda": "",
+      "retorno": "",
+      "manutencao": false
+    },
+    "192.168.34.151": {
+      "nome": "Rasp 151",
+      "gateway": "192.168.34.1",
+      "queda": "",
+      "retorno": "",
+      "manutencao": false
+    },
+    "192.168.34.56": {
+      "nome": "rasp 56",
+      "gateway": "192.168.34.1",
+      "queda": "",
+      "retorno": "",
+      "manutencao": false
+    }
+  }
+}

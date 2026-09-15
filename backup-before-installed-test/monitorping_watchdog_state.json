@@ -1,0 +1,4 @@
+{
+  "last_degraded_restart_at": 1789483365.437874,
+  "last_degraded_restart_reason": "health_request_failed: <urlopen error timed out>"
+}
