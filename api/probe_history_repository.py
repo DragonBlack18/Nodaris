@@ -326,14 +326,17 @@ class ProbeHistoryRepository:
         # RESUMO REAL DO PERÍODO
         # =====================================================
 
-        latencies = [
-            float(
-                item["latency_ms"]
+        latencies = []
+
+        for item in history:
+
+            latency = normalize_probe_latency_ms(
+                item.get("probe_status"),
+                item.get("latency_ms"),
             )
-            for item in history
-            if item["latency_ms"] is not None
-            and item["status"] != "ERROR"
-        ]
+
+            if latency is not None:
+                latencies.append(latency)
 
         offline_count = sum(
             1
