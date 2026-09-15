@@ -6,39 +6,7 @@ from pathlib import Path
 
 from PySide6.QtGui import QIcon
 
-
-# =========================================================
-# RESOURCE ROOT
-# =========================================================
-
-def resource_root() -> Path:
-    """
-    Retorna a raiz onde os recursos da aplicação estão.
-
-    Desenvolvimento:
-        raiz do projeto
-
-    PyInstaller:
-        sys._MEIPASS
-    """
-
-    bundle_root = getattr(
-        sys,
-        "_MEIPASS",
-        None,
-    )
-
-    if bundle_root:
-
-        return Path(
-            bundle_root
-        )
-
-    return (
-        Path(__file__)
-        .resolve()
-        .parents[1]
-    )
+from api.paths import resource_root
 
 
 # =========================================================
