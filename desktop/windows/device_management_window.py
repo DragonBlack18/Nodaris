@@ -202,6 +202,7 @@ class DeviceManagementWindow(QMainWindow):
             ip=data["ip"],
             name=data["name"],
             gateway=data["gateway"],
+            maintenance=data["maintenance"],
         )
 
     def _edit_device(self, device: dict):

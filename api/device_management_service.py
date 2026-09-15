@@ -77,6 +77,7 @@ class DeviceManagementService:
         ip: str,
         name: str,
         gateway: str = "",
+        maintenance: bool = False,
     ) -> dict:
         ip = self._validate_ipv4(ip)
         name = self._validate_name(name)
@@ -97,7 +98,9 @@ class DeviceManagementService:
                 "gateway": gateway,
                 "queda": "",
                 "retorno": "",
-                "manutencao": False,
+                "manutencao": bool(
+                    maintenance
+                ),
             }
             self._write(data)
             return self._public_device(ip, equipments[ip])

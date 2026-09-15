@@ -595,6 +595,7 @@ def create_device(request: DeviceCreateRequest):
             ip=request.ip,
             name=request.name,
             gateway=request.gateway,
+            maintenance=request.maintenance,
         )
         return {
             "ok": True,

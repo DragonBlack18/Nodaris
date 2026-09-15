@@ -40,11 +40,13 @@ class DeviceAdminClient(QObject):
         ip: str,
         name: str,
         gateway: str = "",
+        maintenance: bool = False,
     ):
         payload = {
             "ip": ip,
             "name": name,
             "gateway": gateway,
+            "maintenance": bool(maintenance),
         }
         reply = self.network.post(
             self._json_request("/api/v1/devices"),
