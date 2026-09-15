@@ -1,0 +1,9 @@
+# Dependências para Windows.
+# pygame-ce instala o módulo Python chamado pygame usando wheel pré-compilado.
+pygame-ce>=2.5.0
+pystray>=0.19.5
+Pillow>=10.0.0
+win10toast>=0.9
+winotify>=1.1.0
+pyinstaller>=6.0
+PySide6>=6.7,<7

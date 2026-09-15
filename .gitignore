@@ -1,0 +1,36 @@
+# Ambientes Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Dados locais e potencialmente privados
+monitorping.db
+*.db
+*.db-shm
+*.db-wal
+logs/
+*.log
+*.bak
+*.backup
+configuracoes_*.json
+config_real.json
+
+# Áudio local
+*.wav
+*.mp3
+*.ogg
+
+# Artefatos de build
+build/
+dist/
+*.spec.bak
+*.exe
+*.msi
+installer/
+
+# IDE e sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
