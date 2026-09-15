@@ -338,6 +338,25 @@ class MonitorEngine:
         removed_ips = removed_current_ips | removed_stable_ips
         if removed_ips:
 
+            removed_at = datetime.now().isoformat(
+                timespec="seconds"
+            )
+
+            for ip in removed_ips:
+
+                try:
+                    self.incident_repository.close_incident(
+                        ip=ip,
+                        ended_at=removed_at,
+                    )
+                except Exception as exc:
+                    logger.exception(
+                        "Falha ao encerrar incidente do equipamento "
+                        "removido %s: %s",
+                        ip,
+                        exc,
+                    )
+
             logger.info(
                 "Equipamentos removidos do runtime: %s",
                 ", ".join(

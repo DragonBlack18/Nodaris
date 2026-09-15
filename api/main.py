@@ -663,6 +663,14 @@ def update_device(
 def delete_device(ip: str):
     try:
         device = device_management_service.delete_device(ip)
+
+        incident_repository.close_incident(
+            ip=device["ip"],
+            ended_at=datetime.now().isoformat(
+                timespec="seconds"
+            ),
+        )
+
         return {
             "ok": True,
             "removed": device,
