@@ -6,6 +6,7 @@ import time
 import urllib.error
 import urllib.request
 
+from api.config import API_BASE_URL, API_HOST, API_PORT
 from api.logging_config import get_logger
 from api.paths import WATCHDOG_STATE_FILE
 
@@ -14,10 +15,7 @@ from api.paths import WATCHDOG_STATE_FILE
 # CORE
 # =========================================================
 
-HEALTH_URL = "http://127.0.0.1:8765/health"
-
-CORE_HOST = "127.0.0.1"
-CORE_PORT = 8765
+HEALTH_URL = f"{API_BASE_URL}/health"
 
 CORE_TASK_NAME = "NODARIS Core"
 
@@ -445,8 +443,8 @@ def _core_port_is_open() -> bool:
 
         with socket.create_connection(
             (
-                CORE_HOST,
-                CORE_PORT,
+                API_HOST,
+                API_PORT,
             ),
             timeout=0.5,
         ):
@@ -658,8 +656,8 @@ def _get_listener_process() -> (
     command = (
         "$connection = "
         "Get-NetTCPConnection "
-        "-LocalAddress '127.0.0.1' "
-        "-LocalPort 8765 "
+        f"-LocalAddress '{API_HOST}' "
+        f"-LocalPort {API_PORT} "
         "-State Listen "
         "-ErrorAction SilentlyContinue "
         "| Select-Object -First 1; "
@@ -805,7 +803,7 @@ def _force_kill_verified_core_listener() -> bool:
             "Processo na porta %s não foi "
             "reconhecido como MonitorPing Core. "
             "PID=%s. Encerramento abortado.",
-            CORE_PORT,
+            API_PORT,
             pid,
         )
 
@@ -1047,7 +1045,7 @@ def stop_running_core() -> bool:
             "Porta %s permaneceu ativa apos "
             "encerramento da tarefa. "
             "Verificando processo listener.",
-            CORE_PORT,
+            API_PORT,
         )
 
         if not (

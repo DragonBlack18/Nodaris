@@ -7,6 +7,8 @@ from PySide6.QtNetwork import (
     QNetworkRequest,
 )
 
+from api.config import API_BASE_URL
+
 class ApiClient(QObject):
 
     status_received = Signal(dict)
@@ -40,7 +42,7 @@ class ApiClient(QObject):
 
     def __init__(
         self,
-        base_url: str = "http://127.0.0.1:8765",
+        base_url: str = API_BASE_URL,
         parent=None,
     ):
         super().__init__(parent)

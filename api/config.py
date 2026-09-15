@@ -12,7 +12,10 @@ BASE_DIR = SOURCE_ROOT
 # BLACKBOX EXPORTER
 # =========================================================
 
-BLACKBOX_URL = "http://127.0.0.1:9115"
+BLACKBOX_HOST = "127.0.0.1"
+BLACKBOX_PORT = 9115
+BLACKBOX_ADDRESS = f"{BLACKBOX_HOST}:{BLACKBOX_PORT}"
+BLACKBOX_URL = f"http://{BLACKBOX_ADDRESS}"
 
 # Quanto tempo nossa API aceita esperar pelo Blackbox
 BLACKBOX_TIMEOUT = 10.0
@@ -40,6 +43,7 @@ NATIVE_PING_TIMEOUT_MS = 1500
 
 API_HOST = "127.0.0.1"
 API_PORT = 8765
+API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
 
 
 # =========================================================

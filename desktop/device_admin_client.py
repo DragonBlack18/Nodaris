@@ -10,6 +10,8 @@ from PySide6.QtNetwork import (
     QNetworkRequest,
 )
 
+from api.config import API_BASE_URL
+
 
 class DeviceAdminClient(QObject):
     """Cliente HTTP exclusivo da administração de equipamentos."""
@@ -20,7 +22,7 @@ class DeviceAdminClient(QObject):
 
     def __init__(
         self,
-        base_url: str = "http://127.0.0.1:8765",
+        base_url: str = API_BASE_URL,
         parent=None,
     ):
         super().__init__(parent)

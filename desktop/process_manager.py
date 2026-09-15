@@ -4,7 +4,13 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QTimer, Signal
 
-from api.config import PROBE_PROVIDER
+from api.config import (
+    API_HOST,
+    API_PORT,
+    BLACKBOX_HOST,
+    BLACKBOX_PORT,
+    PROBE_PROVIDER,
+)
 
 
 class ProcessManager(QObject):
@@ -125,8 +131,8 @@ class ProcessManager(QObject):
 
         # Blackbox já está rodando.
         if self._is_port_open(
-            "127.0.0.1",
-            9115,
+            BLACKBOX_HOST,
+            BLACKBOX_PORT,
         ):
 
             self.startup_status.emit(
@@ -182,7 +188,7 @@ class ProcessManager(QObject):
             ),
             (
                 "--web.listen-address="
-                "127.0.0.1:9115"
+                f"{BLACKBOX_HOST}:{BLACKBOX_PORT}"
             ),
         ]
 
@@ -211,8 +217,8 @@ class ProcessManager(QObject):
 
         # API já está rodando.
         if self._is_port_open(
-            "127.0.0.1",
-            8765,
+            API_HOST,
+            API_PORT,
         ):
 
             self.startup_status.emit(
@@ -238,9 +244,9 @@ class ProcessManager(QObject):
             "uvicorn",
             "api.main:app",
             "--host",
-            "127.0.0.1",
+            API_HOST,
             "--port",
-            "8765",
+            str(API_PORT),
         ]
 
         self.api_process.start(
@@ -272,8 +278,8 @@ class ProcessManager(QObject):
         ):
 
             if self._is_port_open(
-                "127.0.0.1",
-                9115,
+                BLACKBOX_HOST,
+                BLACKBOX_PORT,
             ):
 
                 self._timer.stop()
@@ -292,8 +298,8 @@ class ProcessManager(QObject):
         ):
 
             if self._is_port_open(
-                "127.0.0.1",
-                8765,
+                API_HOST,
+                API_PORT,
             ):
 
                 self._timer.stop()

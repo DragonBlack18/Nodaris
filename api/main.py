@@ -5,6 +5,7 @@ from ipaddress import IPv4Address
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from api.config import BLACKBOX_ADDRESS
 from api.device_management_service import (
     DeviceManagementError,
     DeviceManagementService,
@@ -559,7 +560,7 @@ async def blackbox_health():
     return {
         "service": "blackbox_exporter",
         "connected": connected,
-        "address": "127.0.0.1:9115",
+        "address": BLACKBOX_ADDRESS,
     }
 
 
