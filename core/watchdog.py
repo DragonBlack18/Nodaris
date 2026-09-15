@@ -1,4 +1,5 @@
 import json
+import re
 import socket
 import subprocess
 import time
@@ -267,6 +268,49 @@ def recovery_mode_for_reason(
     return "manual"
 
 
+def recovery_mode_for_current_state(
+    reason: str,
+) -> str:
+    """
+    Refina a decisao usando o estado real do Windows.
+
+    Uma falha de /health normalmente significa que o Core deve ser
+    iniciado. Porem, se a tarefa ainda estiver marcada como Running ou
+    existir um processo core.main sem API funcional, solicitar apenas
+    /Run sera ignorado pelo Task Scheduler. Nesse caso precisamos
+    substituir a instancia presa.
+    """
+
+    mode = recovery_mode_for_reason(
+        reason
+    )
+
+    if mode != "start":
+        return mode
+
+    task_state = _get_core_task_state()
+
+    if (
+        task_state
+        and task_state.lower() == "running"
+    ):
+        return "replace"
+
+    core_processes = (
+        _get_verified_core_processes()
+    )
+
+    if core_processes:
+        return "replace"
+
+    # Uma porta ocupada sem processo core.main reconhecido nao deve ser
+    # encerrada automaticamente.
+    if _core_port_is_open():
+        return "manual"
+
+    return "start"
+
+
 # =========================================================
 # WATCHDOG STATE / COOLDOWN
 # =========================================================
@@ -429,32 +473,192 @@ def _core_port_is_open() -> bool:
         return False
 
 
-def _wait_for_port_closed(
-    timeout_seconds: float,
-) -> bool:
-
-    deadline = (
-        time.monotonic()
-        + timeout_seconds
-    )
-
-    while (
-        time.monotonic()
-        < deadline
-    ):
-
-        if not _core_port_is_open():
-
-            return True
-
-        time.sleep(0.5)
-
-    return not _core_port_is_open()
-
-
 # =========================================================
 # PROCESS DISCOVERY
 # =========================================================
+
+def _is_verified_core_command(
+    command_line: str,
+) -> bool:
+
+    return bool(
+        re.search(
+            r"(?:^|\s)-m\s+core\.main(?:\s|$)",
+            str(command_line),
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _get_core_task_state() -> str | None:
+
+    creation_flags = getattr(
+        subprocess,
+        "CREATE_NO_WINDOW",
+        0,
+    )
+
+    command = (
+        "$task = Get-ScheduledTask "
+        f"-TaskName '{CORE_TASK_NAME}' "
+        "-ErrorAction SilentlyContinue; "
+        "if ($null -ne $task) { "
+        "$task.State.ToString() "
+        "}"
+    )
+
+    try:
+
+        result = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                command,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            creationflags=creation_flags,
+            check=False,
+            timeout=10,
+        )
+
+    except (
+        OSError,
+        subprocess.SubprocessError,
+    ):
+
+        logger.exception(
+            "Falha ao consultar estado da tarefa '%s'.",
+            CORE_TASK_NAME,
+        )
+
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    state = (
+        result.stdout or ""
+    ).strip()
+
+    return state or None
+
+
+def _get_verified_core_processes() -> (
+    list[dict] | None
+):
+    """Retorna somente processos Python cuja acao seja -m core.main."""
+
+    creation_flags = getattr(
+        subprocess,
+        "CREATE_NO_WINDOW",
+        0,
+    )
+
+    command = (
+        "$processes = @(Get-CimInstance Win32_Process "
+        "-ErrorAction SilentlyContinue | Where-Object { "
+        "$_.Name -match '^pythonw?\\.exe$' -and "
+        "$_.CommandLine -match "
+        "'(?i)(?:^|\\s)-m\\s+core\\.main(?:\\s|$)' "
+        "} | ForEach-Object { "
+        "[PSCustomObject]@{ "
+        "pid = $_.ProcessId; "
+        "parent_pid = $_.ParentProcessId; "
+        "command_line = $_.CommandLine "
+        "} }); "
+        "$processes | ConvertTo-Json -Compress"
+    )
+
+    try:
+
+        result = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                command,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            creationflags=creation_flags,
+            check=False,
+            timeout=10,
+        )
+
+    except (
+        OSError,
+        subprocess.SubprocessError,
+    ):
+
+        logger.exception(
+            "Falha ao localizar processos do Core."
+        )
+
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    output = (
+        result.stdout or ""
+    ).strip()
+
+    if not output:
+        return []
+
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        logger.error(
+            "Resposta invalida ao localizar processos do Core."
+        )
+        return None
+
+    if isinstance(data, dict):
+        data = [data]
+
+    if not isinstance(data, list):
+        return None
+
+    processes = []
+
+    for item in data:
+
+        if not isinstance(item, dict):
+            continue
+
+        try:
+            pid = int(item["pid"])
+            parent_pid = int(
+                item.get("parent_pid") or 0
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        command_line = str(
+            item.get("command_line") or ""
+        )
+
+        if not _is_verified_core_command(
+            command_line
+        ):
+            continue
+
+        processes.append(
+            {
+                "pid": pid,
+                "parent_pid": parent_pid,
+                "command_line": command_line,
+            }
+        )
+
+    return processes
 
 def _get_listener_process() -> (
     tuple[int, str] | None
@@ -608,7 +812,9 @@ def _force_kill_verified_core_listener() -> bool:
         command_line.lower()
     )
 
-    if "core.main" not in normalized_command:
+    if not _is_verified_core_command(
+        normalized_command
+    ):
 
         logger.error(
             "Processo na porta %s não foi "
@@ -674,6 +880,127 @@ def _force_kill_verified_core_listener() -> bool:
     return True
 
 
+def _force_kill_verified_core_processes() -> bool:
+    """Encerra arvores core.main remanescentes, nunca processos arbitrarios."""
+
+    processes = (
+        _get_verified_core_processes()
+    )
+
+    if processes is None:
+        return False
+
+    if not processes:
+        return True
+
+    process_ids = {
+        process["pid"]
+        for process in processes
+    }
+
+    root_processes = [
+        process
+        for process in processes
+        if process["parent_pid"]
+        not in process_ids
+    ]
+
+    if not root_processes:
+        root_processes = processes
+
+    creation_flags = getattr(
+        subprocess,
+        "CREATE_NO_WINDOW",
+        0,
+    )
+
+    for process in root_processes:
+
+        pid = process["pid"]
+
+        try:
+            result = subprocess.run(
+                [
+                    "taskkill",
+                    "/PID",
+                    str(pid),
+                    "/T",
+                    "/F",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creation_flags,
+                check=False,
+                timeout=10,
+            )
+        except (
+            OSError,
+            subprocess.SubprocessError,
+        ):
+            logger.exception(
+                "Falha ao encerrar arvore remanescente "
+                "do Core. PID=%s.",
+                pid,
+            )
+            return False
+
+        if result.returncode != 0:
+            remaining = (
+                _get_verified_core_processes()
+            )
+            if remaining is None or any(
+                item["pid"] == pid
+                for item in remaining
+            ):
+                logger.error(
+                    "taskkill falhou ao encerrar arvore "
+                    "do Core. PID=%s, codigo=%s.",
+                    pid,
+                    result.returncode,
+                )
+                return False
+
+        logger.warning(
+            "Arvore remanescente do Core encerrada. PID=%s.",
+            pid,
+        )
+
+    return True
+
+
+def _wait_for_core_stopped(
+    timeout_seconds: float,
+) -> bool:
+
+    deadline = (
+        time.monotonic()
+        + timeout_seconds
+    )
+
+    while time.monotonic() < deadline:
+
+        processes = (
+            _get_verified_core_processes()
+        )
+
+        if (
+            processes == []
+            and not _core_port_is_open()
+        ):
+            return True
+
+        time.sleep(0.5)
+
+    processes = (
+        _get_verified_core_processes()
+    )
+
+    return (
+        processes == []
+        and not _core_port_is_open()
+    )
+
+
 def stop_running_core() -> bool:
 
     try:
@@ -708,26 +1035,43 @@ def stop_running_core() -> bool:
             CORE_TASK_NAME,
         )
 
-    if _wait_for_port_closed(
-        5,
+    if _wait_for_core_stopped(
+        CORE_STOP_TIMEOUT_SECONDS,
     ):
 
         return True
 
-    logger.warning(
-        "Porta %s permaneceu ativa após "
-        "encerramento da tarefa. "
-        "Verificando processo listener.",
-        CORE_PORT,
+    core_processes = (
+        _get_verified_core_processes()
     )
 
-    if not (
-        _force_kill_verified_core_listener()
-    ):
+    if core_processes:
 
-        return False
+        logger.warning(
+            "Processos core.main permaneceram ativos apos "
+            "encerramento da tarefa. Encerrando somente "
+            "as arvores verificadas."
+        )
 
-    return _wait_for_port_closed(
+        if not _force_kill_verified_core_processes():
+            return False
+
+    if _core_port_is_open():
+
+        logger.warning(
+            "Porta %s permaneceu ativa apos "
+            "encerramento da tarefa. "
+            "Verificando processo listener.",
+            CORE_PORT,
+        )
+
+        if not (
+            _force_kill_verified_core_listener()
+        ):
+
+            return False
+
+    return _wait_for_core_stopped(
         5,
     )
 
@@ -928,7 +1272,7 @@ def main():
             return
 
         recovery_mode = (
-            recovery_mode_for_reason(
+            recovery_mode_for_current_state(
                 reason
             )
         )
@@ -989,7 +1333,7 @@ def main():
                 return
 
             confirmed_mode = (
-                recovery_mode_for_reason(
+                recovery_mode_for_current_state(
                     confirmed_reason
                 )
             )
