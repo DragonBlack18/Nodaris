@@ -1,16 +1,106 @@
 # NODARIS
 
-Sistema de monitoramento de disponibilidade de equipamentos de rede via ICMP.
+O NODARIS monitora equipamentos de rede por ICMP no Windows e mantém uma visão operacional compartilhada entre o Admin e a TV.
 
-O NODARIS é composto atualmente por:
+## Arquitetura
 
-- **NODARIS Core** — serviço responsável pelo monitoramento e API.
-- **NODARIS Admin** — interface administrativa.
-- **NODARIS TV** — wallboard para acompanhamento operacional.
-- **NODARIS Watchdog** — mecanismo de supervisão e recuperação automática do Core.
+- **NODARIS Core**: API FastAPI, `MonitorEngine`, máquina de estados e persistência.
+- **NODARIS Admin**: cliente PySide6 para dashboard, detalhes e CRUD de equipamentos.
+- **NODARIS TV**: wallboard PySide6 independente, otimizado para leitura à distância.
+- **NODARIS Watchdog**: execução periódica que valida `/health` e recupera o Core.
+- **SQLite**: histórico de probes, eventos, incidentes e último estado conhecido.
+- **NativePingClient**: probes ICMP pelo `ping.exe` nativo do Windows.
 
-> Alguns identificadores técnicos internos ainda utilizam o nome
-> `monitorping` por compatibilidade. Consulte
-> [docs/REBRANDING.md](docs/REBRANDING.md).
+O Admin e a TV nunca iniciam nem encerram o Core. As duas interfaces são clientes da API local em `http://127.0.0.1:8765` e se reconectam automaticamente após uma recuperação.
 
-O NODARIS é um aplicativo desktop para Windows desenvolvido em Python para monitoramento contínuo de equipamentos e servidores por meio de ping. A aplicação acompanha o estado dos hosts em tempo real, identifica quedas e retornos de conexão, exibe indicadores em um dashboard moderno e envia notificações nativas do Windows. O aplicativo foi projetado para permanecer ativo 24 horas por dia. Ao clicar no botão de fechar, a janela é ocultada na bandeja do sistema, enquanto o monitoramento continua funcionando em segundo plano. O encerramento completo ocorre somente pelo menu de saída da bandeja. Principais recursos Monitoramento concorrente de vários endereços IP; Identificação de estados ONLINE, OFFLINE e AGUARDANDO; Nome e IP destacados em verde ou vermelho conforme o estado; Dashboard com total de equipamentos, online, offline, alertas e disponibilidade; Exibição de ping médio e tempo total offline; Notificações Toast nativas do Windows para quedas e retornos; Alertas sonoros opcionais; Janela compacta de monitoramento em tempo real; Execução contínua na bandeja do Windows; Inicialização automática com o Windows; Importação automática de configurações pelo arquivo ips.json; Importação e exportação de configurações em JSON; Importação e exportação de equipamentos em CSV; Histórico de eventos e logs rotativos; Persistência local com SQLite; Modo claro e modo escuro; Empacotamento com PyInstaller e instalação com Inno Setup. Tecnologias utilizadas Python, Tkinter, SQLite, ThreadPoolExecutor, PyInstaller, pygame-ce, pystray, Pillow, winotify e Inno Setup. Objetivo O NODARIS foi criado para oferecer uma solução simples, visual e confiável para acompanhar a disponibilidade de servidores, roteadores, switches, câmeras, impressoras, gateways e outros equipamentos de rede em ambientes Windows.
+## Estados monitorados
+
+O Core consolida os probes nos estados `ONLINE`, `SUSPECT`, `OFFLINE`, `RECOVERING` e `MAINTENANCE`. A regra atual declara `OFFLINE` após três falhas consecutivas e retorna a `ONLINE` após dois sucessos consecutivos.
+
+O endpoint `/health` também diferencia um processo meramente ativo de um sistema operacionalmente saudável, incluindo atraso de scan, estado da tarefa do engine e erros consecutivos.
+
+## Instalação no Windows
+
+O instalador oficial é gerado em:
+
+```text
+installer/NODARIS_Setup_1.0.0.exe
+```
+
+Ele instala três aplicações independentes em `%ProgramFiles%\NODARIS`, cria as tarefas `NODARIS Core` e `NODARIS Watchdog`, inicia o Core e valida o health check. O arquivo inicial de equipamentos é vazio; uma configuração existente nunca é substituída durante update ou reinstalação.
+
+Dados persistentes ficam fora da pasta dos executáveis:
+
+```text
+%ProgramData%\NODARIS\
+├── config\ips.json
+├── data\monitor_api.db
+├── data\monitorping_watchdog_state.json
+└── logs\
+    ├── monitorping-core.log
+    ├── monitorping-engine.log
+    ├── monitorping-watchdog.log
+    └── monitorping-error.log
+```
+
+O uninstall remove tarefas e binários, mas preserva `%ProgramData%\NODARIS` para evitar perda de configuração e histórico.
+
+## Desenvolvimento
+
+Requisitos: Windows 10/11 x64 e Python compatível com as versões declaradas no projeto.
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\pip.exe install -r requirements.txt
+```
+
+No modo fonte, `ips.json`, `data/` e `logs/` permanecem na raiz do projeto. Inicie cada componente separadamente:
+
+```powershell
+.\.venv\Scripts\python.exe -u -m core.main
+.\.venv\Scripts\python.exe -u -m desktop.main
+.\.venv\Scripts\python.exe -u -m desktop.tv_main --windowed
+```
+
+O Watchdog pode ser validado manualmente com:
+
+```powershell
+.\.venv\Scripts\python.exe -m core.watchdog
+```
+
+## Testes
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m compileall api core desktop -q
+```
+
+Validação dos artefatos one-dir:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\verify_build.py
+```
+
+## Build
+
+Instale também as dependências de build:
+
+```powershell
+.\.venv\Scripts\pip.exe install -r requirements-build.txt
+```
+
+Gere os três executáveis:
+
+```powershell
+.\.venv\Scripts\pyinstaller.exe --noconfirm --clean .\NODARIS-Core.spec
+.\.venv\Scripts\pyinstaller.exe --noconfirm --clean .\NODARIS-Admin.spec
+.\.venv\Scripts\pyinstaller.exe --noconfirm --clean .\NODARIS-TV.spec
+```
+
+Compile `NODARIS.iss` com Inno Setup 6 para gerar o instalador.
+
+## Compatibilidade
+
+Alguns identificadores internos continuam com o nome histórico `monitorping` para preservar contratos, logs, banco e clientes existentes. Eles não são marca visível e não devem ser renomeados sem migração específica. Consulte [docs/REBRANDING.md](docs/REBRANDING.md) e [docs/DATA_RETENTION.md](docs/DATA_RETENTION.md).

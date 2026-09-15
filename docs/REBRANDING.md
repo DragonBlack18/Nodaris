@@ -44,7 +44,7 @@ desktop/branding.py
 O helper suporta:
 
 - execução em desenvolvimento;
-- empacotamento futuro via PyInstaller;
+- empacotamento via PyInstaller;
 - `sys._MEIPASS`.
 
 O `QIcon` deve ser materializado somente após existir uma instância válida de
@@ -125,8 +125,9 @@ desktop/main.py
 desktop/tv_main.py
 ```
 
-Os executáveis futuros devem encapsular essas entradas sem alterar os módulos
-internos.
+Os executáveis `NODARIS Core.exe`, `NODARIS Admin.exe` e `NODARIS TV.exe`
+encapsulam essas entradas sem alterar os módulos internos. O Core também aceita
+`--watchdog` para que a tarefa de supervisão não dependa de Python instalado.
 
 ## Arquivos legados
 
@@ -141,8 +142,8 @@ MonitorPing.iss
 ```
 
 `MonitorPing.spec` empacota a aplicação monolítica antiga e não representa a
-arquitetura atual Core/Admin/TV. A etapa de executáveis NODARIS criará
-especificações próprias.
+arquitetura atual Core/Admin/TV. Os arquivos oficiais são `NODARIS-Core.spec`,
+`NODARIS-Admin.spec`, `NODARIS-TV.spec` e `NODARIS.iss`.
 
 Também são referências ou rollback e não representam a arquitetura ativa:
 
