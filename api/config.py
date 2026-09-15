@@ -54,7 +54,8 @@ MONITOR_CONCURRENCY = 50
 
 # Quantas falhas consecutivas são necessárias
 # antes de declarar um IP realmente OFFLINE.
-HEALTH_FAILURE_THRESHOLD = 5
+# Contrato oficial: falha 1/2 = SUSPECT, falha 3 = OFFLINE.
+HEALTH_FAILURE_THRESHOLD = 3
 
 # Quantos sucessos consecutivos são necessários
 # para confirmar recuperação.
