@@ -2,7 +2,8 @@ import logging
 import os
 import threading
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
+
+from api.paths import LOG_DIR
 
 if os.name == "nt":
     import msvcrt
@@ -11,12 +12,6 @@ if os.name == "nt":
 # =========================================================
 # PATHS
 # =========================================================
-
-PROJECT_ROOT = (
-    Path(__file__).resolve().parents[1]
-)
-
-LOG_DIR = PROJECT_ROOT / "logs"
 
 LOCK_FILE = (
     LOG_DIR / ".monitorping-log.lock"

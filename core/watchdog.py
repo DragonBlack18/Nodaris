@@ -5,9 +5,9 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
 
 from api.logging_config import get_logger
+from api.paths import WATCHDOG_STATE_FILE
 
 
 # =========================================================
@@ -50,21 +50,6 @@ REPLACE_RUNNING_CORE_REASONS = {
     "monitor_engine_not_running",
     "health_status_not_ok",
 }
-
-
-# =========================================================
-# STATE
-# =========================================================
-
-PROJECT_ROOT = (
-    Path(__file__).resolve().parents[1]
-)
-
-WATCHDOG_STATE_FILE = (
-    PROJECT_ROOT
-    / "data"
-    / "monitorping_watchdog_state.json"
-)
 
 
 # =========================================================

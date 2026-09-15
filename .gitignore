@@ -9,6 +9,7 @@ monitorping.db
 *.db
 *.db-shm
 *.db-wal
+data/monitorping_watchdog_state.json
 logs/
 *.log
 *.bak

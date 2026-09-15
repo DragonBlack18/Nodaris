@@ -1,15 +1,12 @@
-from pathlib import Path
+from api.paths import (
+    DATABASE_FILE,
+    IPS_FILE,
+    SOURCE_ROOT,
+)
 
 
-# =========================================================
-# DIRETÓRIOS
-# =========================================================
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-IPS_FILE = BASE_DIR / "ips.json"
-
-DATABASE_FILE = BASE_DIR / "data" / "monitor_api.db"
+# Compatibilidade com consumidores tecnicos antigos.
+BASE_DIR = SOURCE_ROOT
 
 # =========================================================
 # BLACKBOX EXPORTER
