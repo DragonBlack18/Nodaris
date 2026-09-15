@@ -1,7 +1,9 @@
 import json
+import os
 import re
 import socket
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -464,12 +466,59 @@ def _is_verified_core_command(
     command_line: str,
 ) -> bool:
 
-    return bool(
-        re.search(
-            r"(?:^|\s)-m\s+core\.main(?:\s|$)",
-            str(command_line),
+    command_line = str(
+        command_line
+    ).strip()
+
+    if re.search(
+        r"(?:^|\s)-m\s+core\.main(?:\s|$)",
+        command_line,
+        flags=re.IGNORECASE,
+    ):
+        return True
+
+    if not getattr(
+        sys,
+        "frozen",
+        False,
+    ):
+        return False
+
+    match = re.match(
+        r'^\s*"([^"]+\.exe)"\s*(.*)$',
+        command_line,
+        flags=re.IGNORECASE,
+    )
+
+    if match is None:
+        match = re.match(
+            r"^\s*(.+?\.exe)\s*(.*)$",
+            command_line,
             flags=re.IGNORECASE,
         )
+
+    if match is None:
+        return False
+
+    executable = os.path.normcase(
+        os.path.abspath(
+            match.group(1)
+        )
+    )
+    expected = os.path.normcase(
+        os.path.abspath(
+            sys.executable
+        )
+    )
+    arguments = (
+        match.group(2)
+        .strip()
+        .lower()
+    )
+
+    return (
+        executable == expected
+        and arguments in ("", "--core")
     )
 
 
@@ -533,7 +582,7 @@ def _get_core_task_state() -> str | None:
 def _get_verified_core_processes() -> (
     list[dict] | None
 ):
-    """Retorna somente processos Python cuja acao seja -m core.main."""
+    """Retorna somente processos reconhecidos como NODARIS Core."""
 
     creation_flags = getattr(
         subprocess,
@@ -544,9 +593,10 @@ def _get_verified_core_processes() -> (
     command = (
         "$processes = @(Get-CimInstance Win32_Process "
         "-ErrorAction SilentlyContinue | Where-Object { "
-        "$_.Name -match '^pythonw?\\.exe$' -and "
+        "($_.Name -match '^pythonw?\\.exe$' -and "
         "$_.CommandLine -match "
-        "'(?i)(?:^|\\s)-m\\s+core\\.main(?:\\s|$)' "
+        "'(?i)(?:^|\\s)-m\\s+core\\.main(?:\\s|$)') -or "
+        "$_.Name -ieq 'NODARIS Core.exe' "
         "} | ForEach-Object { "
         "[PSCustomObject]@{ "
         "pid = $_.ProcessId; "

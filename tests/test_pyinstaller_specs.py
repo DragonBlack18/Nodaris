@@ -14,8 +14,9 @@ class PyInstallerSpecTests(unittest.TestCase):
         text = self._spec_text("NODARIS-Core.spec")
 
         self.assertIn('"core" / "main.py"', text)
-        self.assertIn('hiddenimports=["api.main"]', text)
-        self.assertIn('project_root / "ips.json"', text)
+        self.assertIn('"api.main"', text)
+        self.assertIn('"core.watchdog"', text)
+        self.assertIn('project_root / "defaults" / "ips.json"', text)
         self.assertIn('name="NODARIS Core"', text)
         self.assertIn("console=False", text)
 

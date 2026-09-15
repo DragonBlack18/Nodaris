@@ -29,7 +29,9 @@ dist/
 *.spec.bak
 *.exe
 *.msi
-installer/
+installer/*.exe
+installer/*.bin
+installer/*.tmp
 
 # IDE e sistema
 .vscode/

@@ -15,7 +15,11 @@ def verify_build(project_root: Path) -> list[str]:
 
     required_files = [
         dist / "NODARIS Core" / "NODARIS Core.exe",
-        dist / "NODARIS Core" / "_internal" / "ips.json",
+        dist
+        / "NODARIS Core"
+        / "_internal"
+        / "defaults"
+        / "ips.json",
         dist / "NODARIS Admin" / "NODARIS Admin.exe",
         dist
         / "NODARIS Admin"

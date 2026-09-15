@@ -10,10 +10,16 @@ analysis = Analysis(
     pathex=[str(project_root)],
     binaries=[],
     datas=[
-        (str(project_root / "ips.json"), "."),
+        (
+            str(project_root / "defaults" / "ips.json"),
+            "defaults",
+        ),
     ],
     # Uvicorn resolve "api.main:app" dinamicamente em runtime.
-    hiddenimports=["api.main"],
+    hiddenimports=[
+        "api.main",
+        "core.watchdog",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

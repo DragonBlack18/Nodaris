@@ -384,5 +384,33 @@ def main():
         )
 
 
+def cli_main(
+    arguments: list[str] | None = None,
+) -> int:
+    """Seleciona o Core ou o Watchdog no executavel congelado."""
+
+    arguments = list(
+        sys.argv[1:]
+        if arguments is None
+        else arguments
+    )
+
+    if arguments == ["--watchdog"]:
+        from core.watchdog import main as watchdog_main
+
+        watchdog_main()
+        return 0
+
+    if arguments in ([], ["--core"]):
+        main()
+        return 0
+
+    logger.error(
+        "Argumentos invalidos para o NODARIS Core: %s",
+        arguments,
+    )
+    return 2
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(cli_main())

@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -94,6 +95,34 @@ class WatchdogProcessSafetyTests(unittest.TestCase):
                 'python.exe -m core.main.fake'
             )
         )
+
+    def test_frozen_core_command_is_exact_and_excludes_watchdog(self):
+        executable = r"C:\Program Files\NODARIS\Core\NODARIS Core.exe"
+
+        with (
+            patch.object(sys, "frozen", True, create=True),
+            patch.object(sys, "executable", executable),
+        ):
+            self.assertTrue(
+                watchdog._is_verified_core_command(
+                    f'"{executable}" --core'
+                )
+            )
+            self.assertTrue(
+                watchdog._is_verified_core_command(
+                    f'"{executable}"'
+                )
+            )
+            self.assertFalse(
+                watchdog._is_verified_core_command(
+                    f'"{executable}" --watchdog'
+                )
+            )
+            self.assertFalse(
+                watchdog._is_verified_core_command(
+                    '"C:\\Temp\\NODARIS Core.exe" --core'
+                )
+            )
 
     @patch.object(watchdog, "_wait_for_core_stopped", side_effect=[False, True])
     @patch.object(watchdog, "_force_kill_verified_core_listener")

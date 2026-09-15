@@ -121,6 +121,7 @@ WATCHDOG_STATE_FILE = (
 
 DEFAULT_IPS_FILE = (
     RESOURCE_ROOT
+    / "defaults"
     / "ips.json"
 )
 
