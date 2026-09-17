@@ -6,11 +6,13 @@ __pycache__/
 *.py[cod]
 
 # Dados locais e potencialmente privados
+/ips.json
+/data/
 monitorping.db
 *.db
 *.db-shm
 *.db-wal
-data/monitorping_watchdog_state.json
+monitorping_watchdog_state.json
 logs/
 *.log
 *.bak
