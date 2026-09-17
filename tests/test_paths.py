@@ -7,39 +7,38 @@ from api import paths
 
 
 class PersistentPathTests(unittest.TestCase):
+    def test_source_and_frozen_share_program_data_on_windows(self):
+        program_data = Path(tempfile.gettempdir()) / "ProgramData"
+        environment = {"PROGRAMDATA": str(program_data)}
 
-    def test_source_mode_keeps_project_root(self):
+        source_result = paths.resolve_persistent_root(
+            frozen=False,
+            environment=environment,
+            source_root=Path(tempfile.gettempdir()) / "source",
+        )
+        frozen_result = paths.resolve_persistent_root(
+            frozen=True,
+            environment=environment,
+        )
+
+        expected = (program_data / "NODARIS").resolve()
+        self.assertEqual(source_result, expected)
+        self.assertEqual(frozen_result, expected)
+
+    def test_source_without_windows_paths_uses_isolated_runtime_directory(self):
         source = Path(tempfile.gettempdir()) / "nodaris-source"
-
         result = paths.resolve_persistent_root(
             frozen=False,
             environment={},
             source_root=source,
         )
-
         self.assertEqual(
             result,
-            source.resolve(),
-        )
-
-    def test_frozen_mode_uses_program_data(self):
-        program_data = Path(tempfile.gettempdir()) / "ProgramData"
-
-        result = paths.resolve_persistent_root(
-            frozen=True,
-            environment={
-                "PROGRAMDATA": str(program_data),
-            },
-        )
-
-        self.assertEqual(
-            result,
-            (program_data / "NODARIS").resolve(),
+            (source / ".nodaris-runtime").resolve(),
         )
 
     def test_explicit_data_root_has_priority(self):
         custom = Path(tempfile.gettempdir()) / "NodarisCustom"
-
         result = paths.resolve_persistent_root(
             frozen=True,
             environment={
@@ -47,18 +46,14 @@ class PersistentPathTests(unittest.TestCase):
                 "NODARIS_DATA_ROOT": str(custom),
             },
         )
-
-        self.assertEqual(
-            result,
-            custom.resolve(),
-        )
+        self.assertEqual(result, custom.resolve())
 
     def test_layout_seeds_config_and_never_overwrites_it(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             bundled = root / "bundled-ips.json"
             bundled.write_text(
-                '{"intervalo": 7, "equipamentos": {}}',
+                '{"config_version": 1, "intervalo": 7, "equipamentos": {}}',
                 encoding="utf-8",
             )
 
@@ -83,10 +78,9 @@ class PersistentPathTests(unittest.TestCase):
             self.assertTrue(log_dir.is_dir())
 
             ips_file.write_text(
-                '{"intervalo": 99, "equipamentos": {}}',
+                '{"config_version": 1, "intervalo": 99, "equipamentos": {}}',
                 encoding="utf-8",
             )
-
             paths.ensure_persistent_layout(
                 config_dir=config_dir,
                 data_dir=data_dir,
