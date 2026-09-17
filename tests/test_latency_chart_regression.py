@@ -28,6 +28,10 @@ class QtCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
+        # Replica o comportamento real do NODARIS Admin. No runner offscreen,
+        # fechar a última janela não pode encerrar o QApplication no meio da
+        # suíte de regressão.
+        cls.app.setQuitOnLastWindowClosed(False)
 
 
 class LatencyNormalizationTests(QtCase):
@@ -311,6 +315,8 @@ class MainIntegrationTests(QtCase):
         self.assertEqual(len(requests), 2)
         main.detail_window.close()
         main.hide()
+        main.deleteLater()
+        self.app.processEvents()
 
 
 if __name__ == "__main__":

@@ -5,7 +5,6 @@ import os
 import shutil
 import tempfile
 import threading
-
 from ipaddress import IPv4Address, ip_address
 from pathlib import Path
 
@@ -29,13 +28,7 @@ class DeviceNotFoundError(DeviceManagementError):
 
 
 class DeviceManagementService:
-    """
-    Gerenciamento seguro do ips.json.
-
-    Valida os dados, impede IP duplicado, preserva a estrutura existente e
-    realiza backup seguido de gravação atômica. Não executa ping, não altera
-    o MonitorEngine e não acessa SQLite.
-    """
+    """CRUD seguro e atômico do catálogo persistente de equipamentos."""
 
     def __init__(self, ips_file: Path = IPS_FILE):
         self.ips_file = Path(ips_file)
@@ -44,32 +37,23 @@ class DeviceManagementService:
         )
         self._lock = threading.RLock()
 
-    # =====================================================
-    # CRUD
-    # =====================================================
-
     def list_devices(self) -> list[dict]:
         with self._lock:
             data = self._load()
-            equipments = self._equipments(data)
             return [
                 self._public_device(ip, config)
-                for ip, config in equipments.items()
+                for ip, config in self._equipments(data).items()
             ]
 
     def get_device(self, ip: str) -> dict:
         ip = self._validate_ipv4(ip)
-
         with self._lock:
             data = self._load()
-            equipments = self._equipments(data)
-            device = equipments.get(ip)
-
+            device = self._equipments(data).get(ip)
             if device is None:
                 raise DeviceNotFoundError(
                     f"Equipamento {ip} não encontrado."
                 )
-
             return self._public_device(ip, device)
 
     def create_device(
@@ -86,21 +70,17 @@ class DeviceManagementService:
         with self._lock:
             data = self._load()
             equipments = self._equipments(data)
-
             if ip in equipments:
                 raise DuplicateDeviceError(
                     f"O IP {ip} já está cadastrado."
                 )
 
-            # Mantém exatamente os campos já consumidos pelo projeto.
             equipments[ip] = {
                 "nome": name,
                 "gateway": gateway,
                 "queda": "",
                 "retorno": "",
-                "manutencao": bool(
-                    maintenance
-                ),
+                "manutencao": bool(maintenance),
             }
             self._write(data)
             return self._public_device(ip, equipments[ip])
@@ -118,7 +98,6 @@ class DeviceManagementService:
         with self._lock:
             data = self._load()
             equipments = self._equipments(data)
-
             if current_ip not in equipments:
                 raise DeviceNotFoundError(
                     f"Equipamento {current_ip} não encontrado."
@@ -137,16 +116,11 @@ class DeviceManagementService:
 
             if name is not None:
                 current_config["nome"] = self._validate_name(name)
-
             if gateway is not None:
-                current_config["gateway"] = self._validate_gateway(
-                    gateway
-                )
-
+                current_config["gateway"] = self._validate_gateway(gateway)
             if maintenance is not None:
                 current_config["manutencao"] = bool(maintenance)
 
-            # Campos adicionais existentes são preservados.
             current_config.setdefault("nome", target_ip)
             current_config.setdefault("gateway", "")
             current_config.setdefault("queda", "")
@@ -164,11 +138,9 @@ class DeviceManagementService:
 
     def delete_device(self, ip: str) -> dict:
         ip = self._validate_ipv4(ip)
-
         with self._lock:
             data = self._load()
             equipments = self._equipments(data)
-
             if ip not in equipments:
                 raise DeviceNotFoundError(
                     f"Equipamento {ip} não encontrado."
@@ -179,10 +151,6 @@ class DeviceManagementService:
             self._write(data)
             return removed
 
-    # =====================================================
-    # LOAD / WRITE
-    # =====================================================
-
     def _load(self) -> dict:
         if not self.ips_file.exists():
             raise InvalidDeviceError(
@@ -190,15 +158,16 @@ class DeviceManagementService:
             )
 
         try:
-            with self.ips_file.open("r", encoding="utf-8") as file:
+            # Aceita UTF-8 normal e UTF-8 com BOM, comum em arquivos
+            # restaurados ou editados por ferramentas do Windows.
+            with self.ips_file.open("r", encoding="utf-8-sig") as file:
                 data = json.load(file)
         except json.JSONDecodeError as exc:
-            # Um arquivo já inválido nunca deve ser sobrescrito.
             raise InvalidDeviceError(
                 "ips.json está inválido. "
                 f"Linha {exc.lineno}, coluna {exc.colno}: {exc.msg}"
             ) from exc
-        except OSError as exc:
+        except (OSError, UnicodeError) as exc:
             raise DeviceManagementError(
                 f"Erro lendo ips.json: {exc}"
             ) from exc
@@ -208,6 +177,8 @@ class DeviceManagementService:
                 "A raiz de ips.json precisa ser um objeto JSON."
             )
 
+        data.setdefault("config_version", 1)
+        data.setdefault("intervalo", 5)
         equipments = data.get("equipamentos")
         if equipments is None:
             data["equipamentos"] = {}
@@ -218,9 +189,8 @@ class DeviceManagementService:
 
         return data
 
-    def _write(self, data: dict):
-        """Cria backup e substitui ips.json somente após validar o temporário."""
-
+    def _write(self, data: dict) -> None:
+        """Valida, faz backup e substitui ips.json atomicamente."""
         try:
             payload = json.dumps(
                 data,
@@ -229,16 +199,14 @@ class DeviceManagementService:
             )
             validation = json.loads(payload)
             if not isinstance(validation, dict):
-                raise InvalidDeviceError(
-                    "Configuração gerada inválida."
-                )
+                raise InvalidDeviceError("Configuração gerada inválida.")
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise InvalidDeviceError(
                 "Não foi possível gerar um JSON válido."
             ) from exc
 
         self.ips_file.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = None
+        temporary_path: Path | None = None
 
         try:
             with tempfile.NamedTemporaryFile(
@@ -256,14 +224,21 @@ class DeviceManagementService:
                 os.fsync(temporary.fileno())
                 temporary_path = Path(temporary.name)
 
-            with temporary_path.open("r", encoding="utf-8") as file:
-                json.load(file)
+            # Confirma que o arquivo que será publicado é realmente legível.
+            with temporary_path.open("r", encoding="utf-8-sig") as file:
+                verified = json.load(file)
+            if not isinstance(verified, dict):
+                raise InvalidDeviceError("Configuração temporária inválida.")
 
+            # O backup só é atualizado depois de o novo payload ter sido
+            # completamente escrito e validado.
             if self.ips_file.exists():
                 shutil.copy2(self.ips_file, self.backup_file)
 
             os.replace(temporary_path, self.ips_file)
             temporary_path = None
+        except DeviceManagementError:
+            raise
         except Exception as exc:
             raise DeviceManagementError(
                 f"Não foi possível salvar ips.json: {exc}"
@@ -274,10 +249,6 @@ class DeviceManagementService:
                     temporary_path.unlink()
                 except OSError:
                     pass
-
-    # =====================================================
-    # STRUCTURE / VALIDATION
-    # =====================================================
 
     @staticmethod
     def _equipments(data: dict) -> dict:
@@ -293,12 +264,10 @@ class DeviceManagementService:
         value = str(value).strip()
         if not value:
             raise InvalidDeviceError("IP é obrigatório.")
-
         try:
             parsed = ip_address(value)
         except ValueError as exc:
             raise InvalidDeviceError(f"IP inválido: {value}") from exc
-
         if not isinstance(parsed, IPv4Address):
             raise InvalidDeviceError(
                 "Nesta versão somente IPv4 é suportado."
@@ -309,18 +278,15 @@ class DeviceManagementService:
     def _validate_gateway(value: str | None) -> str:
         if value is None:
             return ""
-
         value = str(value).strip()
         if not value:
             return ""
-
         try:
             parsed = ip_address(value)
         except ValueError as exc:
             raise InvalidDeviceError(
                 f"Gateway inválido: {value}"
             ) from exc
-
         if not isinstance(parsed, IPv4Address):
             raise InvalidDeviceError("Gateway precisa ser IPv4.")
         return str(parsed)
@@ -337,10 +303,6 @@ class DeviceManagementService:
                 "Nome muito longo. Máximo: 120 caracteres."
             )
         return value
-
-    # =====================================================
-    # PUBLIC REPRESENTATION
-    # =====================================================
 
     @staticmethod
     def _public_device(ip: str, config: dict) -> dict:

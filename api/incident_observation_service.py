@@ -1,20 +1,19 @@
 import json
 import sqlite3
 from contextlib import closing
-
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from api.config import DATABASE_FILE, IPS_FILE
+from api.logging_config import get_logger
+
+
+logger = get_logger("incident-observation", "monitorping-incident-observation.log")
 
 
 class IncidentObservationService:
-    """
-    Corrige métricas de duração de incidentes usando somente períodos
-    realmente observados no probe_history. Buracos de monitoramento não
-    contam como downtime.
-    """
+    """Recalcula duração de incidentes usando apenas períodos observados."""
 
     def __init__(
         self,
@@ -23,10 +22,6 @@ class IncidentObservationService:
     ):
         self.database_file = Path(database_file)
         self.ips_file = Path(ips_file)
-
-    # =====================================================
-    # PUBLIC
-    # =====================================================
 
     def enrich_incident(self, incident: dict) -> dict:
         if not isinstance(incident, dict):
@@ -50,7 +45,6 @@ class IncidentObservationService:
             result["duration_basis"] = "unavailable"
             return result
 
-        # Incidente OPEN calcula até agora.
         effective_end = ended_at or datetime.now()
         if effective_end < started_at:
             effective_end = started_at
@@ -70,6 +64,7 @@ class IncidentObservationService:
             ended_at=effective_end,
             max_observed_gap=max_observed_gap,
         )
+
         monitored_seconds = measurements["monitored_seconds"]
         offline_seconds = measurements["offline_seconds"]
         sample_count = measurements["sample_count"]
@@ -77,35 +72,32 @@ class IncidentObservationService:
             0.0,
             wall_clock_seconds - monitored_seconds,
         )
+        coverage_percent = (
+            monitored_seconds / wall_clock_seconds * 100.0
+            if wall_clock_seconds > 0
+            else (100.0 if sample_count > 0 else 0.0)
+        )
 
-        if wall_clock_seconds > 0:
-            coverage_percent = (
-                monitored_seconds / wall_clock_seconds * 100.0
-            )
-        else:
-            coverage_percent = 100.0 if sample_count > 0 else 0.0
-
-        # duration_seconds mantém compatibilidade com a UI e passa a
-        # representar somente o downtime efetivamente observado.
-        result["wall_clock_duration_seconds"] = wall_clock_seconds
-        result["observed_downtime_seconds"] = offline_seconds
-        result["monitored_seconds"] = monitored_seconds
-        result["unmonitored_seconds"] = unmonitored_seconds
-        result["monitoring_coverage_percent"] = coverage_percent
-        result["duration_seconds"] = offline_seconds
-        result["duration_basis"] = "observed_probes"
-        result["duration_sample_count"] = sample_count
-        result["expected_interval_seconds"] = interval_seconds
-        result["max_observed_gap_seconds"] = max_observed_gap
+        result.update(
+            {
+                "wall_clock_duration_seconds": wall_clock_seconds,
+                "observed_downtime_seconds": offline_seconds,
+                "monitored_seconds": monitored_seconds,
+                "unmonitored_seconds": unmonitored_seconds,
+                "monitoring_coverage_percent": coverage_percent,
+                "duration_seconds": offline_seconds,
+                "duration_basis": "observed_probes",
+                "duration_sample_count": sample_count,
+                "expected_interval_seconds": interval_seconds,
+                "max_observed_gap_seconds": max_observed_gap,
+            }
+        )
         return result
 
     def enrich_collection(self, data):
-        """Aceita lista direta, envelopes JSON ou um incidente único."""
         if isinstance(data, list):
             return [
-                self.enrich_incident(item)
-                if isinstance(item, dict)
-                else item
+                self.enrich_incident(item) if isinstance(item, dict) else item
                 for item in data
             ]
 
@@ -131,10 +123,6 @@ class IncidentObservationService:
 
         return data
 
-    # =====================================================
-    # CALCULATION
-    # =====================================================
-
     def _calculate_observed_duration(
         self,
         ip: str,
@@ -142,11 +130,7 @@ class IncidentObservationService:
         ended_at: datetime,
         max_observed_gap: float,
     ) -> dict:
-        samples = self._load_samples(
-            ip=ip,
-            started_at=started_at,
-            ended_at=ended_at,
-        )
+        samples = self._load_samples(ip, started_at, ended_at)
         monitored_seconds = 0.0
         offline_seconds = 0.0
 
@@ -161,18 +145,14 @@ class IncidentObservationService:
                 )
             else:
                 next_at = ended_at
-
             if next_at is None:
                 continue
 
-            raw_duration = max(
-                0.0,
-                (next_at - current_at).total_seconds(),
+            duration = min(
+                max(0.0, (next_at - current_at).total_seconds()),
+                max_observed_gap,
             )
-            duration = min(raw_duration, max_observed_gap)
-            probe_status = str(
-                sample.get("probe_status") or ""
-            ).upper()
+            probe_status = str(sample.get("probe_status") or "").upper()
             effective_status = str(
                 sample.get("effective_status")
                 or sample.get("status")
@@ -180,9 +160,7 @@ class IncidentObservationService:
                 or "UNKNOWN"
             ).upper()
 
-            if probe_status == "ERROR" or effective_status == "ERROR":
-                continue
-            if effective_status == "UNKNOWN":
+            if probe_status == "ERROR" or effective_status in {"ERROR", "UNKNOWN"}:
                 continue
 
             monitored_seconds += duration
@@ -195,12 +173,8 @@ class IncidentObservationService:
             "sample_count": len(samples),
         }
 
-    # =====================================================
-    # DATABASE
-    # =====================================================
-
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.database_file)
+        connection = sqlite3.connect(self.database_file, timeout=10.0)
         connection.row_factory = sqlite3.Row
         return connection
 
@@ -210,51 +184,40 @@ class IncidentObservationService:
         started_at: datetime,
         ended_at: datetime,
     ) -> list[dict]:
-        start_text = started_at.isoformat(timespec="seconds")
-        end_text = ended_at.isoformat(timespec="seconds")
-
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 """
-                SELECT
-                    id,
-                    ip,
-                    probe_status,
-                    effective_status,
-                    observed_at
+                SELECT id, ip, probe_status, effective_status, observed_at
                 FROM probe_history
                 WHERE ip = ?
                   AND datetime(observed_at) >= datetime(?)
                   AND datetime(observed_at) <= datetime(?)
                 ORDER BY datetime(observed_at) ASC, id ASC
                 """,
-                (ip, start_text, end_text),
+                (
+                    ip,
+                    started_at.isoformat(timespec="seconds"),
+                    ended_at.isoformat(timespec="seconds"),
+                ),
             ).fetchall()
-
         return [dict(row) for row in rows]
-
-    # =====================================================
-    # CONFIG
-    # =====================================================
 
     def _load_interval(self) -> float:
         try:
-            with self.ips_file.open("r", encoding="utf-8") as file:
+            with self.ips_file.open("r", encoding="utf-8-sig") as file:
                 config = json.load(file)
-            interval = float(config.get("intervalo", 5))
-            return max(1.0, interval)
-        except Exception:
+            return max(1.0, float(config.get("intervalo", 5)))
+        except Exception as exc:
+            logger.exception(
+                "Falha ao carregar intervalo para observação de incidentes: %s",
+                exc,
+            )
             return 5.0
-
-    # =====================================================
-    # DATETIME
-    # =====================================================
 
     @staticmethod
     def _parse_datetime(value) -> Optional[datetime]:
         if not value:
             return None
-
         try:
             parsed = datetime.fromisoformat(
                 str(value).replace("Z", "+00:00")

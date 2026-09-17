@@ -9,31 +9,19 @@ from pathlib import Path
 
 APP_DIRECTORY_NAME = "NODARIS"
 DATA_ROOT_ENVIRONMENT_VARIABLE = "NODARIS_DATA_ROOT"
-
-SOURCE_ROOT = (
-    Path(__file__).resolve().parents[1]
-)
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def is_frozen() -> bool:
-    return bool(
-        getattr(sys, "frozen", False)
-    )
+    return bool(getattr(sys, "frozen", False))
 
 
 def resource_root() -> Path:
-    bundle_root = getattr(
-        sys,
-        "_MEIPASS",
-        None,
-    )
-
+    bundle_root = getattr(sys, "_MEIPASS", None)
     if bundle_root:
         return Path(bundle_root).resolve()
-
     if is_frozen():
         return Path(sys.executable).resolve().parent
-
     return SOURCE_ROOT
 
 
@@ -43,87 +31,59 @@ def resolve_persistent_root(
     environment: dict[str, str] | None = None,
     source_root: Path = SOURCE_ROOT,
 ) -> Path:
-    """Resolve a raiz gravavel sem depender do diretorio do executavel."""
+    """Resolve a única raiz persistente de configuração, banco e logs.
 
-    environment = (
-        os.environ
-        if environment is None
-        else environment
-    )
+    No Windows, tanto o source quanto os executáveis congelados usam a pasta
+    ProgramData/NODARIS. Isso elimina o conflito em que o source lia um
+    ips.json da pasta do projeto enquanto a instalação lia outro catálogo.
+
+    Para testes ou desenvolvimento isolado, NODARIS_DATA_ROOT continua tendo
+    prioridade total e permite apontar a aplicação para um diretório temporário.
+    """
+    environment = os.environ if environment is None else environment
 
     override = str(
-        environment.get(
-            DATA_ROOT_ENVIRONMENT_VARIABLE,
-            "",
-        )
+        environment.get(DATA_ROOT_ENVIRONMENT_VARIABLE, "")
     ).strip()
-
     if override:
         return Path(override).expanduser().resolve()
+
+    program_data = str(environment.get("PROGRAMDATA", "")).strip()
+    if program_data:
+        return (Path(program_data) / APP_DIRECTORY_NAME).resolve()
 
     if frozen is None:
         frozen = is_frozen()
 
-    if not frozen:
-        return Path(source_root).resolve()
+    local_app_data = str(environment.get("LOCALAPPDATA", "")).strip()
+    if frozen and local_app_data:
+        return (Path(local_app_data) / APP_DIRECTORY_NAME).resolve()
 
-    program_data = str(
-        environment.get(
-            "PROGRAMDATA",
-            "",
-        )
-    ).strip()
-
-    if program_data:
-        return (
-            Path(program_data)
-            / APP_DIRECTORY_NAME
-        ).resolve()
-
-    # Fallback defensivo para ambientes Windows incompletos ou testes.
-    local_app_data = str(
-        environment.get(
-            "LOCALAPPDATA",
-            "",
-        )
-    ).strip()
-
-    if local_app_data:
-        return (
-            Path(local_app_data)
-            / APP_DIRECTORY_NAME
-        ).resolve()
-
-    return (
-        Path.home()
-        / ".nodaris"
-    ).resolve()
+    return (Path(source_root) / ".nodaris-runtime").resolve()
 
 
 RESOURCE_ROOT = resource_root()
 PERSISTENT_ROOT = resolve_persistent_root()
-
-if is_frozen():
-    CONFIG_DIR = PERSISTENT_ROOT / "config"
-else:
-    # Preserva o contrato de desenvolvimento: ips.json continua na raiz.
-    CONFIG_DIR = PERSISTENT_ROOT
-
+CONFIG_DIR = PERSISTENT_ROOT / "config"
 DATA_DIR = PERSISTENT_ROOT / "data"
 LOG_DIR = PERSISTENT_ROOT / "logs"
 
 IPS_FILE = CONFIG_DIR / "ips.json"
 DATABASE_FILE = DATA_DIR / "monitor_api.db"
-WATCHDOG_STATE_FILE = (
-    DATA_DIR
-    / "monitorping_watchdog_state.json"
-)
+WATCHDOG_STATE_FILE = DATA_DIR / "monitorping_watchdog_state.json"
+DEFAULT_IPS_FILE = RESOURCE_ROOT / "defaults" / "ips.json"
+LEGACY_SOURCE_IPS_FILE = SOURCE_ROOT / "ips.json"
 
-DEFAULT_IPS_FILE = (
-    RESOURCE_ROOT
-    / "defaults"
-    / "ips.json"
-)
+
+def _validate_config_file(path: Path) -> dict:
+    with Path(path).open("r", encoding="utf-8-sig") as file:
+        data = json.load(file)
+    if not isinstance(data, dict):
+        raise ValueError("Configuração precisa ser um objeto JSON.")
+    equipments = data.get("equipamentos", {})
+    if not isinstance(equipments, dict):
+        raise ValueError("'equipamentos' precisa ser um objeto JSON.")
+    return data
 
 
 def ensure_persistent_layout(
@@ -133,44 +93,49 @@ def ensure_persistent_layout(
     log_dir: Path = LOG_DIR,
     ips_file: Path = IPS_FILE,
     default_ips_file: Path = DEFAULT_IPS_FILE,
+    legacy_ips_file: Path | None = None,
 ) -> None:
-    """Cria diretorios gravaveis e inicializa ips.json sem sobrescrever dados."""
+    """Cria o layout persistente sem sobrescrever configuração existente.
 
-    for directory in (
-        config_dir,
-        data_dir,
-        log_dir,
-    ):
-        Path(directory).mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+    Quando solicitado e somente se o destino ainda não existir, um ips.json
+    legado do source pode ser usado como seed. Isso permite migrar instalações
+    de desenvolvimento antigas para a fonte única de dados sem perder cadastro.
+    """
+    for directory in (config_dir, data_dir, log_dir):
+        Path(directory).mkdir(parents=True, exist_ok=True)
 
     ips_file = Path(ips_file)
-
     if ips_file.exists():
         return
+
+    source_candidate: Path | None = None
+    if legacy_ips_file is not None:
+        candidate = Path(legacy_ips_file)
+        if candidate.exists() and candidate.resolve() != ips_file.resolve():
+            _validate_config_file(candidate)
+            source_candidate = candidate
+
+    if source_candidate is None:
+        default_candidate = Path(default_ips_file)
+        if default_candidate.exists():
+            _validate_config_file(default_candidate)
+            source_candidate = default_candidate
 
     temporary_file = ips_file.with_name(
         f".{ips_file.name}.{os.getpid()}.tmp"
     )
 
     try:
-        default_ips_file = Path(
-            default_ips_file
-        )
-
-        if default_ips_file.exists():
-            shutil.copyfile(
-                default_ips_file,
-                temporary_file,
-            )
+        if source_candidate is not None:
+            shutil.copyfile(source_candidate, temporary_file)
         else:
             temporary_file.write_text(
                 json.dumps(
                     {
                         "config_version": 1,
                         "intervalo": 5,
+                        "som_ativo": False,
+                        "arquivo_audio": "",
                         "equipamentos": {},
                     },
                     ensure_ascii=False,
@@ -180,10 +145,8 @@ def ensure_persistent_layout(
                 encoding="utf-8",
             )
 
-        os.replace(
-            temporary_file,
-            ips_file,
-        )
+        _validate_config_file(temporary_file)
+        os.replace(temporary_file, ips_file)
     finally:
         if temporary_file.exists():
             try:
@@ -192,4 +155,10 @@ def ensure_persistent_layout(
                 pass
 
 
-ensure_persistent_layout()
+ensure_persistent_layout(
+    legacy_ips_file=(
+        LEGACY_SOURCE_IPS_FILE
+        if not is_frozen()
+        else None
+    )
+)

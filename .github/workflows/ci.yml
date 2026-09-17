@@ -1,0 +1,64 @@
+name: NODARIS CI
+
+on:
+  push:
+    branches:
+      - main
+      - stabilize-operational-20260917
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+          python -m pip check
+
+      - name: Run unit tests
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -X faulthandler -m unittest discover -s tests -v
+
+      - name: Compile Python sources
+        shell: pwsh
+        run: |
+          python -m compileall api core desktop -q
+
+      - name: Build Core
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean .\NODARIS-Core.spec
+
+      - name: Build Admin
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean .\NODARIS-Admin.spec
+
+      - name: Build TV
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean .\NODARIS-TV.spec
+
+      - name: Verify frozen builds
+        shell: pwsh
+        run: |
+          python .\scripts\verify_build.py
