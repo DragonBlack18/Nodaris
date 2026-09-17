@@ -136,7 +136,7 @@ try {
         -TimeoutSec 8
 
     $summary = $status.summary
-    Info (
+    $statusLine = (
         "Status: total={0} online={1} suspect={2} offline={3} " +
         "recovering={4} unknown={5} errors={6}"
     ) -f @(
@@ -148,6 +148,7 @@ try {
         $summary.unknown,
         $summary.monitoring_errors
     )
+    Info $statusLine
 
     if ([int]$summary.monitoring_errors -eq 0) {
         Pass "Nenhum ERROR técnico no scan atual."
