@@ -8,6 +8,7 @@ __pycache__/
 # Dados locais e potencialmente privados
 /ips.json
 /data/
+/.nodaris-runtime/
 monitorping.db
 *.db
 *.db-shm
