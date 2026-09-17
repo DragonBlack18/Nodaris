@@ -59,8 +59,6 @@ def resolve_persistent_root(
     if frozen and local_app_data:
         return (Path(local_app_data) / APP_DIRECTORY_NAME).resolve()
 
-    # Fallback para desenvolvimento fora do Windows. Mantemos os dados em
-    # uma pasta dedicada e ignorada pelo Git, em vez de misturá-los ao source.
     return (Path(source_root) / ".nodaris-runtime").resolve()
 
 
@@ -74,6 +72,18 @@ IPS_FILE = CONFIG_DIR / "ips.json"
 DATABASE_FILE = DATA_DIR / "monitor_api.db"
 WATCHDOG_STATE_FILE = DATA_DIR / "monitorping_watchdog_state.json"
 DEFAULT_IPS_FILE = RESOURCE_ROOT / "defaults" / "ips.json"
+LEGACY_SOURCE_IPS_FILE = SOURCE_ROOT / "ips.json"
+
+
+def _validate_config_file(path: Path) -> dict:
+    with Path(path).open("r", encoding="utf-8-sig") as file:
+        data = json.load(file)
+    if not isinstance(data, dict):
+        raise ValueError("Configuração precisa ser um objeto JSON.")
+    equipments = data.get("equipamentos", {})
+    if not isinstance(equipments, dict):
+        raise ValueError("'equipamentos' precisa ser um objeto JSON.")
+    return data
 
 
 def ensure_persistent_layout(
@@ -83,8 +93,14 @@ def ensure_persistent_layout(
     log_dir: Path = LOG_DIR,
     ips_file: Path = IPS_FILE,
     default_ips_file: Path = DEFAULT_IPS_FILE,
+    legacy_ips_file: Path | None = None,
 ) -> None:
-    """Cria o layout persistente sem sobrescrever configuração existente."""
+    """Cria o layout persistente sem sobrescrever configuração existente.
+
+    Quando solicitado e somente se o destino ainda não existir, um ips.json
+    legado do source pode ser usado como seed. Isso permite migrar instalações
+    de desenvolvimento antigas para a fonte única de dados sem perder cadastro.
+    """
     for directory in (config_dir, data_dir, log_dir):
         Path(directory).mkdir(parents=True, exist_ok=True)
 
@@ -92,14 +108,26 @@ def ensure_persistent_layout(
     if ips_file.exists():
         return
 
+    source_candidate: Path | None = None
+    if legacy_ips_file is not None:
+        candidate = Path(legacy_ips_file)
+        if candidate.exists() and candidate.resolve() != ips_file.resolve():
+            _validate_config_file(candidate)
+            source_candidate = candidate
+
+    if source_candidate is None:
+        default_candidate = Path(default_ips_file)
+        if default_candidate.exists():
+            _validate_config_file(default_candidate)
+            source_candidate = default_candidate
+
     temporary_file = ips_file.with_name(
         f".{ips_file.name}.{os.getpid()}.tmp"
     )
 
     try:
-        default_ips_file = Path(default_ips_file)
-        if default_ips_file.exists():
-            shutil.copyfile(default_ips_file, temporary_file)
+        if source_candidate is not None:
+            shutil.copyfile(source_candidate, temporary_file)
         else:
             temporary_file.write_text(
                 json.dumps(
@@ -117,12 +145,7 @@ def ensure_persistent_layout(
                 encoding="utf-8",
             )
 
-        # Valida o seed antes de publicá-lo.
-        with temporary_file.open("r", encoding="utf-8-sig") as file:
-            seeded = json.load(file)
-        if not isinstance(seeded, dict):
-            raise ValueError("Configuração inicial inválida.")
-
+        _validate_config_file(temporary_file)
         os.replace(temporary_file, ips_file)
     finally:
         if temporary_file.exists():
@@ -132,4 +155,10 @@ def ensure_persistent_layout(
                 pass
 
 
-ensure_persistent_layout()
+ensure_persistent_layout(
+    legacy_ips_file=(
+        LEGACY_SOURCE_IPS_FILE
+        if not is_frozen()
+        else None
+    )
+)
