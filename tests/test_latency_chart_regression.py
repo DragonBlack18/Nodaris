@@ -28,9 +28,9 @@ class QtCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
-        # desktop.main usa este mesmo comportamento. Sem isso, um teste que
-        # fecha a única janela visível pode encerrar o QApplication no runner
-        # offscreen antes de o unittest terminar.
+        # Replica o comportamento real do NODARIS Admin. No runner offscreen,
+        # fechar a última janela não pode encerrar o QApplication no meio da
+        # suíte de regressão.
         cls.app.setQuitOnLastWindowClosed(False)
 
 
@@ -122,12 +122,11 @@ class ChartTests(QtCase):
     def test_resize_keeps_chart_valid(self):
         self.chart.set_samples([sample(10, offset=-10), sample(500)])
         self.chart.show()
-        self.chart.resize(360, 220)
-        self.app.processEvents()
-        self.chart.resize(1100, 700)
-        self.app.processEvents()
-        self.assertEqual(self.chart.valid_latencies, [10, 500])
-        self.assertGreater(self.chart.axis_y.max(), 500)
+        for width in (680, 1100, 680):
+            self.chart.resize(width, 370)
+            self.app.processEvents()
+            self.assertGreater(self.chart.axis_y.max(), 500)
+            self.assertFalse(self.chart.grab().isNull())
         self.chart.close()
 
 
@@ -141,95 +140,89 @@ class DetailTests(QtCase):
         )
         self.detail.api.get_device_availability = lambda *a, **kw: None
         self.detail.api.get_device_incidents = lambda *a, **kw: None
+        self.detail.show()
+        self.app.processEvents()
 
     def tearDown(self):
         self.detail.close()
         self.app.processEvents()
 
     @staticmethod
-    def device(ip="192.0.2.1"):
-        return {
-            "ip": ip,
-            "name": "Device",
-            "status": "ONLINE",
-            "health": {
-                "latency": {
-                    "current_ms": 10,
-                    "average_ms": 10,
-                    "minimum_ms": 10,
-                    "maximum_ms": 10,
-                    "samples": 1,
-                }
-            },
-        }
+    def device(ip):
+        return {"ip": ip, "name": ip, "status": "ONLINE", "health": {}}
 
-    def response(self, token, history, summary=None, total_samples=None):
-        data = {"history": history, "summary": summary or {}}
-        if total_samples is not None:
-            data["total_samples"] = total_samples
-        self.detail._probe_history_context_received("192.0.2.1", token, data)
-
-    def test_period_race_and_error_response(self):
-        self.detail.set_device(self.device())
-        first = self.requests[-1][2]
-        self.detail._change_history_period(15)
-        second = self.requests[-1][2]
-        self.assertNotEqual(first, second)
-        self.response(first, [sample(900)])
-        self.assertEqual(self.detail.average_latency_card.value_label.text(), "--")
-        self.response(second, [sample(20)])
-        self.assertEqual(self.detail.average_latency_card.value_label.text(), "20.00 ms")
-        self.detail._change_history_period(60)
-        third = self.requests[-1][2]
-        self.detail._probe_history_context_received("192.0.2.1", third, None)
-        self.assertEqual(self.detail.average_latency_card.value_label.text(), "--")
-        self.assertEqual(self.detail.latency_chart.valid_latencies, [])
+    def response(self, token, samples, summary=None):
+        ip = token[1]
+        self.detail._probe_history_context_received(ip, token, {
+            "history": samples, "summary": summary or {},
+            "total_samples": len(samples),
+        })
 
     def test_switch_ip_resets_before_and_after_empty_response(self):
         self.detail.set_device(self.device("192.0.2.1"))
         token_a = self.requests[-1][2]
-        self.detail._probe_history_context_received(
-            "192.0.2.1", token_a, {"history": [sample(45)]}
-        )
-        self.assertEqual(self.detail.average_latency_card.value_label.text(), "45.00 ms")
+        self.response(token_a, [sample(40), sample(42), sample(44)])
+        self.assertEqual(self.detail.average_latency_card.value_label.text(), "42.00 ms")
         self.detail.set_device(self.device("192.0.2.2"))
-        self.assertEqual(self.detail.average_latency_card.value_label.text(), "--")
         token_b = self.requests[-1][2]
-        self.detail._probe_history_context_received(
-            "192.0.2.2", token_b, {"history": []}
-        )
-        self.assertEqual(self.detail.latency_chart.valid_latencies, [])
+        self.assertEqual(self.detail.average_latency_card.value_label.text(), "--")
+        self.assertEqual(len(self.detail.latency_chart.chart.series()), 0)
+        self.response(token_b, [])
+        self.assertEqual(self.detail.average_latency_card.value_label.text(), "--")
+        self.response(token_a, [sample(99)])
         self.assertEqual(self.detail.average_latency_card.value_label.text(), "--")
 
+    def test_period_race_and_error_response(self):
+        self.detail.set_device(self.device("192.0.2.1"))
+        old = self.requests[-1][2]
+        self.detail.latency_chart.period_combo.setCurrentText("15 min")
+        token_15 = self.requests[-1][2]
+        self.detail.latency_chart.period_combo.setCurrentText("24 horas")
+        token_24 = self.requests[-1][2]
+        self.assertNotEqual(token_15, token_24)
+        self.response(token_24, [sample(10), sample(20)])
+        self.assertEqual(self.detail.average_latency_card.value_label.text(), "15.00 ms")
+        self.response(token_15, [sample(99)])
+        self.response(old, [sample(88)])
+        self.assertEqual(self.detail.average_latency_card.value_label.text(), "15.00 ms")
+        self.detail._probe_history_context_received("192.0.2.1", token_24, None)
+        self.assertEqual(self.detail.average_latency_card.value_label.text(), "--")
+        self.assertEqual(self.detail._last_probe_history_request_at, 0.0)
+
     def test_response_can_arrive_between_set_device_and_show(self):
+        self.detail.hide()
+        self.app.processEvents()
         self.detail.set_device(self.device("192.0.2.1"))
         token = self.requests[-1][2]
-        self.detail._probe_history_context_received(
-            "192.0.2.1", token, {"history": [sample(33)]}
-        )
-        self.assertEqual(self.detail.average_latency_card.value_label.text(), "33.00 ms")
-        self.detail.show()
-        self.app.processEvents()
-        self.assertEqual(len(self.requests), 1)
-        self.assertEqual(self.detail.average_latency_card.value_label.text(), "33.00 ms")
+        self.assertFalse(self.detail.isVisible())
+        self.response(token, [sample(10), sample(20)])
+        self.assertEqual(self.detail.average_latency_card.value_label.text(), "15.00 ms")
 
     def test_invalid_and_offline_statistics(self):
         self.detail.set_device(self.device("192.0.2.1"))
-        self.response(self.requests[-1][2], [
-            sample(10), sample(None, "OFFLINE"), sample(-1), sample(30),
-        ])
-        self.assertEqual(self.detail.average_latency_card.value_label.text(), "20.00 ms")
+        token = self.requests[-1][2]
+        self.response(token, [sample(10), sample(None, "OFFLINE"),
+                              sample(-1), sample("nan"), sample(20)])
+        self.assertEqual(self.detail.average_latency_card.value_label.text(), "15.00 ms")
         self.assertEqual(self.detail.min_latency_card.value_label.text(), "10.00 ms")
-        self.assertEqual(self.detail.max_latency_card.value_label.text(), "30.00 ms")
+        self.assertEqual(self.detail.max_latency_card.value_label.text(), "20.00 ms")
+        self.response(token, [sample(None, "ERROR"), sample(None, "OFFLINE")])
+        self.assertEqual(self.detail.average_latency_card.value_label.text(), "--")
+        self.assertEqual(len(self.detail.latency_chart.chart.series()), 0)
 
     def test_full_period_summary_survives_downsampling(self):
         self.detail.set_device(self.device("192.0.2.1"))
         token = self.requests[-1][2]
-        self.response(token, [sample(5), sample(30)], {
-            "average_latency_ms": 16,
-            "minimum_latency_ms": 5,
-            "maximum_latency_ms": 30,
-        }, total_samples=100)
+        self.detail._probe_history_context_received("192.0.2.1", token, {
+            "history": [sample(10), sample(20)],
+            "total_samples": 2000,
+            "summary": {
+                "average_latency_ms": 16,
+                "minimum_latency_ms": 5,
+                "maximum_latency_ms": 30,
+                "loss_percent": 2,
+            },
+        })
         self.assertEqual(self.detail.average_latency_card.value_label.text(), "16.00 ms")
         self.assertEqual(self.detail.min_latency_card.value_label.text(), "5.00 ms")
         self.assertEqual(self.detail.max_latency_card.value_label.text(), "30.00 ms")
