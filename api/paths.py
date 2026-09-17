@@ -33,8 +33,8 @@ def resolve_persistent_root(
 ) -> Path:
     """Resolve a única raiz persistente de configuração, banco e logs.
 
-    No Windows, tanto o source quanto os executáveis congelados usam
-    %ProgramData%\NODARIS. Isso elimina o conflito em que o source lia um
+    No Windows, tanto o source quanto os executáveis congelados usam a pasta
+    ProgramData/NODARIS. Isso elimina o conflito em que o source lia um
     ips.json da pasta do projeto enquanto a instalação lia outro catálogo.
 
     Para testes ou desenvolvimento isolado, NODARIS_DATA_ROOT continua tendo
