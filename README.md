@@ -12,30 +12,22 @@
 
 - **NODARIS Core**: API FastAPI, `MonitorEngine`, máquina de estados e persistência.
 - **NODARIS Admin**: cliente PySide6 para dashboard, detalhes e CRUD de equipamentos.
-- **NODARIS TV**: wallboard PySide6 independente, otimizado para leitura à distância.
-- **NODARIS Watchdog**: execução periódica que valida `/health` e recupera o Core.
+- **NODARIS TV**: wallboard PySide6 independente e somente leitura.
+- **NODARIS Watchdog**: valida `/health` e recupera o Core quando existe falha persistente.
 - **SQLite**: histórico de probes, eventos, incidentes e último estado conhecido.
 - **NativePingClient**: probes ICMP pelo `ping.exe` nativo do Windows.
 
-O Admin e a TV nunca iniciam nem encerram o Core. As duas interfaces são clientes da API local em `http://127.0.0.1:8765` e se reconectam automaticamente após uma recuperação.
+Admin e TV nunca iniciam nem encerram o Core. Ambos são clientes da API local em `http://127.0.0.1:8765`.
 
-## Estados monitorados
+## Estados
 
-O Core consolida os probes nos estados `ONLINE`, `SUSPECT`, `OFFLINE`, `RECOVERING` e `MAINTENANCE`. A regra atual declara `OFFLINE` após três falhas consecutivas e retorna a `ONLINE` após dois sucessos consecutivos.
+O Core consolida probes em `ONLINE`, `SUSPECT`, `OFFLINE` e `RECOVERING`. Equipamentos em manutenção permanecem no catálogo administrativo, mas não participam do ciclo de probe. O contrato atual confirma `OFFLINE` após três falhas consecutivas e recuperação após dois sucessos consecutivos.
 
-O endpoint `/health` também diferencia um processo meramente ativo de um sistema operacionalmente saudável, incluindo atraso de scan, estado da tarefa do engine e erros consecutivos.
+Erros técnicos do mecanismo de monitoramento são classificados como `ERROR` e não contam automaticamente como queda real do equipamento.
 
-## Instalação no Windows
+## Dados persistentes
 
-O instalador oficial é gerado em:
-
-```text
-installer/NODARIS_Setup_1.0.0.exe
-```
-
-Ele instala três aplicações independentes em `%ProgramFiles%\NODARIS`, cria as tarefas `NODARIS Core` e `NODARIS Watchdog`, inicia o Core e valida o health check. O arquivo inicial de equipamentos é vazio; uma configuração existente nunca é substituída durante update ou reinstalação.
-
-Dados persistentes ficam fora da pasta dos executáveis:
+No Windows existe uma única fonte de verdade, usada tanto pelo source quanto pelos executáveis instalados:
 
 ```text
 %ProgramData%\NODARIS\
@@ -49,71 +41,130 @@ Dados persistentes ficam fora da pasta dos executáveis:
     └── monitorping-error.log
 ```
 
-O uninstall remove tarefas e binários, mas preserva `%ProgramData%\NODARIS` para evitar perda de configuração e histórico.
+Isso evita que uma execução em source monitore um `ips.json` diferente daquele usado pela instalação.
 
-## Desenvolvimento
+Para testes isolados, defina `NODARIS_DATA_ROOT` antes de iniciar qualquer componente:
 
-Requisitos: Windows 10/11 x64 e Python compatível com as versões declaradas no projeto.
+```powershell
+$env:NODARIS_DATA_ROOT = "$env:TEMP\NODARIS-test"
+```
+
+Remova a variável para voltar ao armazenamento operacional:
+
+```powershell
+Remove-Item Env:NODARIS_DATA_ROOT -ErrorAction SilentlyContinue
+```
+
+O instalador e o uninstall não apagam `%ProgramData%\NODARIS`; configuração e histórico são preservados em atualização/reinstalação.
+
+## Desenvolvimento no Windows
+
+Requisitos: Windows 10/11 x64 e Python compatível com `requirements.txt`.
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\pip.exe install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
 ```
 
-No modo fonte, `ips.json`, `data/` e `logs/` permanecem na raiz do projeto. Inicie cada componente separadamente:
+### Testes
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+
+.\.venv\Scripts\python.exe -m compileall api core desktop -q
+```
+
+### Execução em source
+
+Pare primeiro qualquer Core instalado que esteja ocupando a porta `8765`.
+
+Core:
 
 ```powershell
 .\.venv\Scripts\python.exe -u -m core.main
+```
+
+Admin, em outro terminal:
+
+```powershell
 .\.venv\Scripts\python.exe -u -m desktop.main
+```
+
+TV em janela:
+
+```powershell
 .\.venv\Scripts\python.exe -u -m desktop.tv_main --windowed
 ```
 
-O Watchdog pode ser validado manualmente com:
+Health check:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8765/health | Format-List
+```
+
+Status:
+
+```powershell
+$status = Invoke-RestMethod http://127.0.0.1:8765/api/v1/status
+$status.summary
+$status.engine_metrics
+```
+
+Catálogo:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8765/api/v1/devices | ConvertTo-Json -Depth 10
+```
+
+## Watchdog
+
+O Watchdog diferencia indisponibilidade real de timeout HTTP transitório. Um Core ainda identificado como vivo não é substituído imediatamente por causa de uma única demora em `/health`.
+
+Validação manual:
 
 ```powershell
 .\.venv\Scripts\python.exe -m core.watchdog
 ```
 
-## Testes
+Na instalação oficial ele é executado periodicamente pela tarefa `NODARIS Watchdog`.
+
+## Build
+
+Gere os três aplicativos separadamente:
 
 ```powershell
-$env:QT_QPA_PLATFORM = "offscreen"
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe -m compileall api core desktop -q
+.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean .\NODARIS-Core.spec
+.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean .\NODARIS-Admin.spec
+.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean .\NODARIS-TV.spec
 ```
 
-Validação dos artefatos one-dir:
+Valide os artefatos:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\verify_build.py
 ```
 
-## Build
+Compile `NODARIS.iss` com Inno Setup 6 somente depois de testes, `compileall` e `verify_build.py` passarem.
 
-Instale também as dependências de build:
+## CI
 
-```powershell
-.\.venv\Scripts\pip.exe install -r requirements-build.txt
-```
+O workflow `NODARIS CI` executa em Windows:
 
-Gere os três executáveis:
-
-```powershell
-.\.venv\Scripts\pyinstaller.exe --noconfirm --clean .\NODARIS-Core.spec
-.\.venv\Scripts\pyinstaller.exe --noconfirm --clean .\NODARIS-Admin.spec
-.\.venv\Scripts\pyinstaller.exe --noconfirm --clean .\NODARIS-TV.spec
-```
-
-Compile `NODARIS.iss` com Inno Setup 6 para gerar o instalador.
+- instalação das dependências;
+- `pip check`;
+- suíte `unittest`;
+- `compileall`;
+- builds PyInstaller de Core, Admin e TV;
+- `scripts/verify_build.py`.
 
 ## Desenvolvedores
 
-O desenvolvimento do NODARIS contou com a participação das seguintes áreas:
-
-- **DragonBlack18** — Desenvolvimento de Software, responsável pelo desenvolvimento e evolução do sistema de monitoramento.
-- **JEFERSON BRANGER** — Infraestrutura, responsável pelo suporte e colaboração na área de infraestrutura do projeto.
+- **DragonBlack18** — Desenvolvimento de Software e evolução do sistema.
+- **JEFERSON BRANGER** — Infraestrutura e suporte de infraestrutura.
 
 ## Compatibilidade
 
-Alguns identificadores internos continuam com o nome histórico `monitorping` para preservar contratos, logs, banco e clientes existentes. Eles não são marca visível e não devem ser renomeados sem migração específica. Consulte [docs/REBRANDING.md](docs/REBRANDING.md) e [docs/DATA_RETENTION.md](docs/DATA_RETENTION.md).
+Alguns identificadores internos continuam com o nome histórico `monitorping` para preservar contratos de logs, banco e clientes existentes. Eles não são marca visível e não devem ser renomeados sem migração específica. Consulte `docs/REBRANDING.md` e `docs/DATA_RETENTION.md`.
