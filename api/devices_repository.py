@@ -11,33 +11,27 @@ class DevicesRepositoryError(Exception):
 
 
 class DevicesRepository:
-
     def __init__(self, file_path: Path = IPS_FILE):
-        self.file_path = file_path
+        self.file_path = Path(file_path)
 
     def load_config(self) -> dict[str, Any]:
-        """
-        Carrega o ips.json completo.
-        """
-
+        """Carrega e valida a estrutura básica do ips.json."""
         if not self.file_path.exists():
             raise DevicesRepositoryError(
                 f"Arquivo não encontrado: {self.file_path}"
             )
 
         try:
-            with self.file_path.open(
-                "r",
-                encoding="utf-8",
-            ) as file:
+            # utf-8-sig aceita tanto UTF-8 puro quanto arquivos com BOM,
+            # algo comum após cópia/edição pelo Windows/PowerShell.
+            with self.file_path.open("r", encoding="utf-8-sig") as file:
                 data = json.load(file)
-
         except json.JSONDecodeError as exc:
             raise DevicesRepositoryError(
-                f"ips.json inválido: {exc}"
+                "ips.json inválido. "
+                f"Linha {exc.lineno}, coluna {exc.colno}: {exc.msg}"
             ) from exc
-
-        except OSError as exc:
+        except (OSError, UnicodeError) as exc:
             raise DevicesRepositoryError(
                 f"Falha ao abrir ips.json: {exc}"
             ) from exc
@@ -47,34 +41,27 @@ class DevicesRepository:
                 "A raiz do ips.json deve ser um objeto JSON."
             )
 
-        return data
-
-    def get_devices(self) -> list[dict]:
-        """
-        Converte a estrutura antiga do ips.json
-        para uma lista padronizada usada pela API.
-        """
-
-        config = self.load_config()
-
-        equipamentos = config.get(
-            "equipamentos",
-            {},
-        )
-
-        if not isinstance(equipamentos, dict):
+        equipments = data.get("equipamentos", {})
+        if not isinstance(equipments, dict):
             raise DevicesRepositoryError(
                 "'equipamentos' precisa ser um objeto."
             )
 
-        devices = []
+        return data
 
-        for ip, information in equipamentos.items():
+    def get_devices(self) -> list[dict]:
+        """Converte o catálogo persistido para a representação da API."""
+        config = self.load_config()
+        equipments = config.get("equipamentos", {})
+        devices: list[dict] = []
 
+        for ip, information in equipments.items():
+            ip = str(ip).strip()
             try:
                 IPv4Address(ip)
-
             except ValueError:
+                # Configurações legadas inválidas não derrubam todo o Core.
+                # O CRUD atual não permite criar novos IPs inválidos.
                 continue
 
             if not isinstance(information, dict):
@@ -83,27 +70,12 @@ class DevicesRepository:
             devices.append(
                 {
                     "ip": ip,
-                    "name": information.get(
-                        "nome",
-                        ip,
-                    ),
-                    "gateway": information.get(
-                        "gateway",
-                        "",
-                    ),
-                    "last_down": information.get(
-                        "queda",
-                        "",
-                    ),
-                    "last_return": information.get(
-                        "retorno",
-                        "",
-                    ),
+                    "name": str(information.get("nome") or ip),
+                    "gateway": str(information.get("gateway") or ""),
+                    "last_down": str(information.get("queda") or ""),
+                    "last_return": str(information.get("retorno") or ""),
                     "maintenance": bool(
-                        information.get(
-                            "manutencao",
-                            False,
-                        )
+                        information.get("manutencao", False)
                     ),
                 }
             )
@@ -111,20 +83,12 @@ class DevicesRepository:
         return devices
 
     def get_interval(self) -> int:
-        """
-        Obtém o intervalo configurado no ips.json.
-        """
-
+        """Obtém o intervalo de varredura configurado no ips.json."""
         config = self.load_config()
-
-        interval = config.get(
-            "intervalo",
-            5,
-        )
+        interval = config.get("intervalo", 5)
 
         try:
             interval = int(interval)
-
         except (TypeError, ValueError):
             interval = 5
 
