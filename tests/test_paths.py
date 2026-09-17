@@ -94,6 +94,66 @@ class PersistentPathTests(unittest.TestCase):
                 99,
             )
 
+    def test_legacy_source_catalog_is_migrated_only_when_destination_is_missing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            legacy = root / "legacy" / "ips.json"
+            legacy.parent.mkdir(parents=True)
+            legacy.write_text(
+                json.dumps(
+                    {
+                        "config_version": 1,
+                        "intervalo": 11,
+                        "equipamentos": {
+                            "192.0.2.10": {
+                                "nome": "Legacy",
+                                "gateway": "",
+                                "manutencao": False,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8-sig",
+            )
+            default = root / "default.json"
+            default.write_text(
+                '{"config_version": 1, "intervalo": 5, "equipamentos": {}}',
+                encoding="utf-8",
+            )
+
+            config_dir = root / "persistent" / "config"
+            data_dir = root / "persistent" / "data"
+            log_dir = root / "persistent" / "logs"
+            target = config_dir / "ips.json"
+
+            paths.ensure_persistent_layout(
+                config_dir=config_dir,
+                data_dir=data_dir,
+                log_dir=log_dir,
+                ips_file=target,
+                default_ips_file=default,
+                legacy_ips_file=legacy,
+            )
+
+            migrated = json.loads(target.read_text(encoding="utf-8-sig"))
+            self.assertEqual(migrated["intervalo"], 11)
+            self.assertIn("192.0.2.10", migrated["equipamentos"])
+
+            target.write_text(
+                '{"config_version": 1, "intervalo": 33, "equipamentos": {}}',
+                encoding="utf-8",
+            )
+            paths.ensure_persistent_layout(
+                config_dir=config_dir,
+                data_dir=data_dir,
+                log_dir=log_dir,
+                ips_file=target,
+                default_ips_file=default,
+                legacy_ips_file=legacy,
+            )
+            kept = json.loads(target.read_text(encoding="utf-8"))
+            self.assertEqual(kept["intervalo"], 33)
+
 
 if __name__ == "__main__":
     unittest.main()
