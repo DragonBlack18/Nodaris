@@ -1,3 +1,4 @@
+import asyncio
 import json
 import tempfile
 import unittest
@@ -12,17 +13,19 @@ from api.probe_history_repository import ProbeHistoryRepository
 
 
 class DeviceRemovalRetentionTests(unittest.TestCase):
-
     def test_runtime_reconciliation_closes_incident_for_direct_removal(self):
         engine = MonitorEngine.__new__(MonitorEngine)
         engine._current_status = {"192.0.2.21": {"status": "OFFLINE"}}
         engine._last_stable_status = {"192.0.2.21": "OFFLINE"}
         engine.incident_repository = Mock()
+        engine.ip_health_service = Mock()
+        engine.ip_health_service._states = {"192.0.2.21": {}}
 
-        engine._reconcile_runtime_devices([])
+        asyncio.run(engine._reconcile_runtime_devices([]))
 
         self.assertEqual(engine._current_status, {})
         self.assertEqual(engine._last_stable_status, {})
+        self.assertEqual(engine.ip_health_service._states, {})
         engine.incident_repository.close_incident.assert_called_once()
         call = engine.incident_repository.close_incident.call_args
         self.assertEqual(call.kwargs["ip"], "192.0.2.21")
@@ -36,6 +39,7 @@ class DeviceRemovalRetentionTests(unittest.TestCase):
             config_file.write_text(
                 json.dumps(
                     {
+                        "config_version": 1,
                         "intervalo": 5,
                         "equipamentos": {
                             "192.0.2.20": {
