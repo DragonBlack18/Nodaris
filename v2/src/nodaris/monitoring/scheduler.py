@@ -115,8 +115,27 @@ class ProbeScheduler:
         while self._running:
             target = await self._queue.get()
             try:
-                result = await self.probe(target.ip)
-                await self.on_result(result)
+                try:
+                    result = await self.probe(target.ip)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    result = ProbeResult(
+                        ip=target.ip,
+                        online=False,
+                        latency_ms=None,
+                        exit_code=None,
+                        error=f"unexpected probe failure: {exc}",
+                    )
+
+                try:
+                    await self.on_result(result)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # A camada de persistência/observabilidade registra a falha.
+                    # O worker continua vivo para não interromper outros IPs.
+                    pass
             finally:
                 next_due = time.monotonic() + target.interval_seconds
                 heapq.heappush(
