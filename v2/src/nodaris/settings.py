@@ -11,7 +11,7 @@ class MonitorSettings:
     online_interval_seconds: float = 5.0
     offline_interval_seconds: float = 10.0
     maintenance_interval_seconds: float = 60.0
-    schedule_jitter_seconds: float = 0.75
+    schedule_jitter_seconds: float = 5.0
 
     def __post_init__(self) -> None:
         if self.probe_timeout_ms < 100:
